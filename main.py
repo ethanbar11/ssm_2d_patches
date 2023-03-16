@@ -62,7 +62,7 @@ def init_parser():
 
     parser.add_argument('--dataset', default='CIFAR10', choices=['CIFAR10', 'CIFAR100', 'T-IMNET', 'SVHN'], type=str,
                         help='Image Net dataset path')
-    parser.add_argument('--ema', default=None, choices=['ema', 'ssm_2d', 's4nd', None], type=str,
+    parser.add_argument('--ema', default=None, choices=['ema', 'ssm_2d', 's4nd','none', None], type=str,
                         help='Image Net dataset path')
 
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',

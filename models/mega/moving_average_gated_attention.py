@@ -72,8 +72,10 @@ class MovingAverageGatedAttention(nn.Module):
             import yaml
             config = yaml.load(open(config_path, 'r'), Loader=yaml.FullLoader)
             self.move = S4ND(**config)
-        else:
+        elif args.ema == 'ema':
             self.move = MultiHeadEMA(embed_dim, ndim=ndim, bidirectional=bidirectional, truncation=truncation)
+        else:
+            self.move = nn.Identity()
 
         self.v_proj = nn.Linear(embed_dim, hdim)
         self.mx_proj = nn.Linear(embed_dim, zdim + hdim + 2 * embed_dim)

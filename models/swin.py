@@ -275,7 +275,7 @@ class SwinTransformerBlock(nn.Module):
 
         # W-MSA/SW-MSA
         if self.shift_size == 0:
-            x_windows = rearrange(x_windows, 'b l h -> l b h')
+            x_windows =  (x_windows, 'b l h -> l b h')
             attn_windows = self.attn(x_windows, mask=self.attn_mask)  # nW*B, window_size*window_size, C
             attn_windows = rearrange(attn_windows, 'l b h -> b l h')
         else:
