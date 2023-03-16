@@ -214,12 +214,13 @@ class SwinTransformerBlock(nn.Module):
                                                     attention_activation='softmax',
                                                     patch_amount=window_size ** 2, dropout=drop,
                                                     attention_dropout=attn_drop, hidden_dropout=attn_drop,
-                                                    drop_path=drop_path,norm_type=norm_type, args=args)
+                                                    no_rel_pos_bias=True,
+                                                    drop_path=drop_path, norm_type=norm_type, args=args)
         else:
             self.attn = WindowAttention(
                 dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
                 qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop, is_LSA=is_LSA)
- 
+
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)

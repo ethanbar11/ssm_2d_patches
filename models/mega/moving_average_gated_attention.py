@@ -46,7 +46,6 @@ class MovingAverageGatedAttention(nn.Module):
             args=None,
     ):
         super().__init__()
-        # no_rel_pos_bias = True
         self.embed_dim = embed_dim
         self.hdim = hdim
         self.zdim = zdim
