@@ -21,6 +21,7 @@ class SequenceNorm(nn.Module):
         elif norm_type == 'syncbatchnorm':
             self.norm = nn.SyncBatchNorm(embedding_dim, eps=eps, affine=affine)
         else:
+
             raise ValueError('Unknown norm type: {}'.format(norm_type))
 
     def normalize(self, x):

@@ -60,7 +60,7 @@ class MovingAverageGatedAttention(nn.Module):
         self.hidden_dropout = dropout_module(hidden_dropout, module_name=self.__class__.__name__)
         # Attention dropout is standard dropout
         self.attention_dropout = FairseqDropout(attention_dropout, module_name=self.__class__.__name__)
-        self.drop_path = DropPath(drop_path, dim=1) if drop_path > 0. else nn.Identity()
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
         self.chunk_size = chunk_size
         self.norm = SequenceNorm(norm_type, embed_dim)

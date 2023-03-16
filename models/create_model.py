@@ -19,7 +19,7 @@ def create_model(img_size, n_classes, args):
                      is_LSA=args.is_LSA, is_SPT=args.is_SPT)
 
     elif args.model == 'pit':
-        patch_size = 2 if img_size == 32 else 4 
+        patch_size = 2 if img_size == 32 else 4
         args.channel = 96
         args.heads = (2, 4, 8)
         args.depth = (2, 6, 4)
@@ -42,11 +42,13 @@ def create_model(img_size, n_classes, args):
 
         model = SwinTransformer(img_size=img_size, window_size=window_size, drop_path_rate=args.sd,
                                 patch_size=patch_size, mlp_ratio=mlp_ratio, depths=depths, num_heads=num_heads,
+                                embed_dim=args.embed_dim,
                                 num_classes=n_classes,
-                                is_SPT=args.is_SPT, is_LSA=args.is_LSA,args=args)
+                                is_SPT=args.is_SPT, is_LSA=args.is_LSA, args=args)
     elif args.model == 'mega':
         patch_size = 4 if img_size == 32 else 8
-        model = VisionMEGA(img_size=img_size, patch_size=patch_size, num_classes=n_classes,depth=9,embed_dim=args.embed_dim,hidden_dim=args.hidden_dim,
-                           ffn_hidden_dim=args.ffn_hidden_dim,zdim=args.zdim,ndim=args.ndim,args=args)
+        model = VisionMEGA(img_size=img_size, patch_size=patch_size, num_classes=n_classes, depth=9,
+                           embed_dim=args.embed_dim, hidden_dim=args.hidden_dim,
+                           ffn_hidden_dim=args.ffn_hidden_dim, zdim=args.zdim, ndim=args.ndim, args=args)
 
     return model

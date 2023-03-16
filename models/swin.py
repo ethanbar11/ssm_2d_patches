@@ -192,6 +192,7 @@ class SwinTransformerBlock(nn.Module):
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
                  act_layer=nn.GELU, norm_layer=nn.LayerNorm, is_LSA=False, args=None):
         super().__init__()
+
         self.dim = dim
         self.input_resolution = input_resolution
         self.num_heads = num_heads
@@ -206,9 +207,14 @@ class SwinTransformerBlock(nn.Module):
 
         self.norm1 = norm_layer(dim)
         if self.shift_size == 0:
-            self.attn = MovingAverageGatedAttention(embed_dim=dim, zdim=dim, hdim=dim, ndim=args.ndim,
-                                                    attention_activation='laplace',
-                                                    patch_amount=window_size ** 2, args=args)
+            if issubclass(norm_layer, nn.LayerNorm):
+                norm_type = 'layernorm'
+            print(norm_type)
+            self.attn = MovingAverageGatedAttention(embed_dim=dim, zdim=dim // 4, hdim=dim * 2, ndim=args.ndim,
+                                                    attention_activation='softmax',
+                                                    patch_amount=window_size ** 2, dropout=drop,
+                                                    attention_dropout=attn_drop, hidden_dropout=attn_drop,
+                                                    drop_path=drop_path,norm_type=norm_type, args=args)
         else:
             self.attn = WindowAttention(
                 dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,

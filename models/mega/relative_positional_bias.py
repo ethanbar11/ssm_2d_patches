@@ -17,7 +17,8 @@ class RelativePositionalBias(nn.Module):
         nn.init.normal_(self.rel_pos_bias, mean=0.0, std=std)
 
     def forward(self, seq_len):
-        seq_len=int(seq_len[0].data.item())
+        if type(seq_len) is not int:
+            seq_len=int(seq_len[0].data.item())
         if seq_len > self.max_positions:
             raise ValueError('Sequence length {} going beyond max length {}'.format(seq_len, self.max_positions))
 
