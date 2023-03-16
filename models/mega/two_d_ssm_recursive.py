@@ -6,14 +6,13 @@
 
 
 import math
-from typing import Dict, Optional, Tuple
+from typing import Optional
 from einops import rearrange, einsum, repeat
 import torch
-import numpy as np
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from models.ssm_coefficient import CoeffCalculator
+from models.mega.ssm_coefficient import CoeffCalculator
 
 _c2r = torch.view_as_real
 _r2c = torch.view_as_complex

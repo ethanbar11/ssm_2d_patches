@@ -29,6 +29,7 @@ class MegaLayer(nn.Module):
             attention_activation='softmax',
             norm_type: str = 'layernorm',
             no_rel_pos_bias=False,
+            patch_amount=None,
             args=None,
     ) -> None:
         super().__init__()
@@ -50,6 +51,7 @@ class MegaLayer(nn.Module):
             bidirectional=True,
             norm_type=norm_type,
             no_rel_pos_bias=no_rel_pos_bias,
+            patch_amount=patch_amount,
             args=args
         )
         self.nffn = NormalizedFeedForwardNetwork(

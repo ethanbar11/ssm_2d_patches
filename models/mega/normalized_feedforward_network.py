@@ -8,7 +8,7 @@ from torch import nn
 from .fairseq_dropout import FairseqDropout, FairseqFeatureDropout
 from .sequence_norm import SequenceNorm
 from .mega_utils import get_activation_fn
-from ..layers import DropPath
+from timm.models.layers import DropPath
 
 
 class NormalizedFeedForwardNetwork(nn.Module):

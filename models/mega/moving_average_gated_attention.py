@@ -14,7 +14,7 @@ from .sequence_norm import SequenceNorm
 from .exponential_moving_average import MultiHeadEMA
 from .two_d_ssm_recursive import TwoDimensionalSSM
 from .mega_utils import relu2, laplace, get_activation_fn
-from ..layers import DropPath
+from timm.models.layers import DropPath
 
 
 class MovingAverageGatedAttention(nn.Module):
@@ -42,10 +42,11 @@ class MovingAverageGatedAttention(nn.Module):
             feature_dropout=False,
             no_rel_pos_bias=False,
             max_positions=1024,
+            patch_amount=None,
             args=None,
     ):
         super().__init__()
-
+        # no_rel_pos_bias = True
         self.embed_dim = embed_dim
         self.hdim = hdim
         self.zdim = zdim
@@ -64,9 +65,9 @@ class MovingAverageGatedAttention(nn.Module):
         self.chunk_size = chunk_size
         self.norm = SequenceNorm(norm_type, embed_dim)
 
-        if args.ema_type == 'ssm_2d':
-            self.move = TwoDimensionalSSM(embed_dim, ndim=ndim, truncation=truncation, args=args)
-        elif args.ema_type == 's4nd':
+        if args.ema == 'ssm_2d':
+            self.move = TwoDimensionalSSM(embed_dim, ndim=ndim, truncation=truncation,L=patch_amount, args=args)
+        elif args.ema == 's4nd':
             config_path = args.s4nd_config
             # Read from config path with ymal
             import yaml
@@ -112,7 +113,7 @@ class MovingAverageGatedAttention(nn.Module):
         qk = torch.matmul(q, k.transpose(2, 3)) / lengths
         # C x C
         if self.rel_pos_bias is not None:
-            bias = self.rel_pos_bias(slen)
+            bias = self.rel_pos_bias(torch.Tensor([slen]))
             qk = qk + bias
 
         if self.attention_activation == 'relu2':
@@ -138,7 +139,7 @@ class MovingAverageGatedAttention(nn.Module):
         attn_weights = F.softmax(qk, dim=-1)
         return attn_weights
 
-    def forward(self, x) -> Tensor:
+    def forward(self, x,mask=None) -> Tensor:
         """Input shape: Time x Batch x Channel
         """
 

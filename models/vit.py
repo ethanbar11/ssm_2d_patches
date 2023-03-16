@@ -4,8 +4,8 @@ from utils.drop_path import DropPath
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 from .SPT import ShiftedPatchTokenization
-from .exponential_moving_average import MultiHeadEMA
-from .two_d_ssm_recursive import TwoDimensionalSSM
+from models.mega.exponential_moving_average import MultiHeadEMA
+from models.mega.two_d_ssm_recursive import TwoDimensionalSSM
 
 
 # helpers
@@ -229,6 +229,7 @@ class ViT(nn.Module):
         x = self.to_patch_embedding(img)
 
         b, n, _ = x.shape
+
 
         cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=b)
 

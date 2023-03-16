@@ -28,13 +28,14 @@ import warnings
 warnings.filterwarnings("ignore", category=Warning)
 
 best_acc1 = 0
-MODELS = ['vit', 'swin', 'pit', 'cait', 't2t']
+MODELS = ['vit', 'swin', 'pit', 'cait', 't2t', 'mega']
 
 
-def create_optimization_groups(model,args):
+def create_optimization_groups(model, args):
     decay = []
     no_decay = []
-    skip_list=['pos_embedding']
+    # skip_list = ['pos_embedding','pos_embed']
+    skip_list =[]
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue  # frozen weights
@@ -61,7 +62,7 @@ def init_parser():
 
     parser.add_argument('--dataset', default='CIFAR10', choices=['CIFAR10', 'CIFAR100', 'T-IMNET', 'SVHN'], type=str,
                         help='Image Net dataset path')
-    parser.add_argument('--ema', default=None, choices=['ema','ssm_2d','s4nd',None], type=str,
+    parser.add_argument('--ema', default=None, choices=['ema', 'ssm_2d', 's4nd', None], type=str,
                         help='Image Net dataset path')
 
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
@@ -111,12 +112,19 @@ def init_parser():
 
     parser.add_argument('--smoothing', type=float, default=0.1, help='Label smoothing (default: 0.1)')
 
-    parser.add_argument('--cm',action='store_false' , help='Use Cutmix')
+    parser.add_argument('--cm', action='store_false', help='Use Cutmix')
+
+    # Mega params
+    parser.add_argument('--embed_dim', type=int, default=192, help='seed')
+    parser.add_argument('--hidden_dim', type=int, default=192, help='seed')
+    parser.add_argument('--ffn_hidden_dim', type=int, default=192, help='seed')
+    parser.add_argument('--zdim', type=int, default=192, help='seed')
+    parser.add_argument('--ndim', type=int, default=16, help='seed')
 
     parser.add_argument('--beta', default=1.0, type=float,
                         help='hyperparameter beta (default: 1)')
 
-    parser.add_argument('--mu',action='store_false' , help='Use Mixup')
+    parser.add_argument('--mu', action='store_false', help='Use Mixup')
 
     parser.add_argument('--alpha', default=1.0, type=float,
                         help='mixup interpolation coefficient (default: 1)')
@@ -142,8 +150,8 @@ def init_parser():
 
     parser.add_argument('--directions_amount', type=int, default=4, help='number directions, can be 2 or 4')
     parser.add_argument('--save_kernels_and_exit', type=bool, default=False, help='Should')
-    parser.add_argument('--ema_type', type=str, default='ema', help='Should')
-    parser.add_argument('--s4nd_config', type=str, default=r'/home/ethan_baron/mega/s4nd_configs/s4nd.yaml', help='Should')
+    parser.add_argument('--s4nd_config', type=str, default=r'/home/ethan_baron/mega/s4nd_configs/s4nd.yaml',
+                        help='Should')
     parser.add_argument('--dataset_percentage', type=float, default=1.0, help='Should')
 
     return parser
@@ -151,7 +159,7 @@ def init_parser():
 
 def main(args):
     if args.project != '':
-        wandb.init(project=args.project,name = args.name, config=args)
+        wandb.init(project=args.project, name=args.name, config=args)
         args.wandb = True
     else:
         args.wandb = False
@@ -162,9 +170,17 @@ def main(args):
     data_info = datainfo(logger, args)
 
     model = create_model(data_info['img_size'], data_info['n_classes'], args)
-
+    print(model)
     model.cuda(args.gpu)
-
+    s=0
+    for name, param in model.named_parameters():
+        if param.requires_grad and 'blocks.0' in name:
+            print(name, param.shape,param.numel())
+            s+=param.numel()
+            print(s)
+    print(s)
+    # n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # print(f'Number of params: {format(n_parameters, ",")}')
     print(Fore.GREEN + '*' * 80)
     logger.debug(f"Creating model: {model_name}")
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -270,7 +286,7 @@ def main(args):
     optimizer = torch.optim.AdamW(groups, lr=args.lr, weight_decay=args.weight_decay)
     scheduler = build_scheduler(args, optimizer, len(train_loader))
 
-    summary(model, (3, data_info['img_size'], data_info['img_size']))
+    # summary(model, (3, data_info['img_size'], data_info['img_size']))
 
     print()
     print("Beginning training")
