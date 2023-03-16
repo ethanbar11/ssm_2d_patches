@@ -8,13 +8,13 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.nn import Parameter
 
+from .drop import DropPath
 from .fairseq_dropout import FairseqDropout, FairseqFeatureDropout
 from .relative_positional_bias import RelativePositionalBias
 from .sequence_norm import SequenceNorm
 from .exponential_moving_average import MultiHeadEMA
 from .two_d_ssm_recursive import TwoDimensionalSSM
 from .mega_utils import relu2, laplace, get_activation_fn
-from timm.models.layers import DropPath
 
 
 class MovingAverageGatedAttention(nn.Module):
@@ -59,13 +59,13 @@ class MovingAverageGatedAttention(nn.Module):
         self.hidden_dropout = dropout_module(hidden_dropout, module_name=self.__class__.__name__)
         # Attention dropout is standard dropout
         self.attention_dropout = FairseqDropout(attention_dropout, module_name=self.__class__.__name__)
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.drop_path = DropPath(drop_path, dim=1) if drop_path > 0. else nn.Identity()
 
         self.chunk_size = chunk_size
         self.norm = SequenceNorm(norm_type, embed_dim)
 
         if args.ema == 'ssm_2d':
-            self.move = TwoDimensionalSSM(embed_dim, ndim=ndim, truncation=truncation,L=patch_amount, args=args)
+            self.move = TwoDimensionalSSM(embed_dim, ndim=ndim, truncation=truncation, L=patch_amount, args=args)
         elif args.ema == 's4nd':
             config_path = args.s4nd_config
             # Read from config path with ymal
@@ -74,7 +74,6 @@ class MovingAverageGatedAttention(nn.Module):
             self.move = S4ND(**config)
         else:
             self.move = MultiHeadEMA(embed_dim, ndim=ndim, bidirectional=bidirectional, truncation=truncation)
-
 
         self.v_proj = nn.Linear(embed_dim, hdim)
         self.mx_proj = nn.Linear(embed_dim, zdim + hdim + 2 * embed_dim)
@@ -138,7 +137,7 @@ class MovingAverageGatedAttention(nn.Module):
         attn_weights = F.softmax(qk, dim=-1)
         return attn_weights
 
-    def forward(self, x,mask=None) -> Tensor:
+    def forward(self, x, mask=None) -> Tensor:
         """Input shape: Time x Batch x Channel
         """
 
