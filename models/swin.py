@@ -219,7 +219,7 @@ class SwinTransformerBlock(nn.Module):
             self.attn = WindowAttention(
                 dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
                 qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop, is_LSA=is_LSA)
-
+ 
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
