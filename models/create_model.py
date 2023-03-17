@@ -36,6 +36,7 @@ def create_model(img_size, n_classes, args):
     elif args.model == 'swin':
         depths = [2, 6, 4]
         num_heads = [3, 6, 12]
+        # num_heads = [1,1,1]
         mlp_ratio = 2
         window_size = 4
         patch_size = 2 if img_size == 32 else 4

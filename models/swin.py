@@ -127,6 +127,7 @@ class WindowAttention(nn.Module):
         self.window_size = window_size  # Wh, Ww
         self.num_heads = num_heads
         head_dim = dim // num_heads
+        print('dim', dim, 'head_dim', head_dim, 'num_heads', num_heads)
         self.scale = qk_scale or head_dim ** -0.5
         self.is_LSA = is_LSA
         if is_LSA:
@@ -278,7 +279,7 @@ class SwinTransformerBlock(nn.Module):
                 attn_drop = 0
             real_ema = args.ema
             args.ema = None
-            self.attn = MovingAverageGatedAttention(embed_dim=dim, zdim=dim // 4, hdim=dim * 2, ndim=args.ndim,
+            self.attn = MovingAverageGatedAttention(embed_dim=dim, zdim=dim, hdim=dim * 2, ndim=args.ndim,
                                                     # attention_activation='relu',
                                                     patch_amount=window_size ** 2, dropout=drop,
                                                     attention_dropout=attn_drop, hidden_dropout=attn_drop,

@@ -42,10 +42,10 @@ def create_optimization_groups(model, args):
 
         if name.endswith(".bias") or (len(param.shape) == 1 and name.endswith(".weight")) or name in skip_list or (
                 '.move.' in name and 'omega' not in name):
-            print("no weight decay: {}".format(name))
+            # print("no weight decay: {}".format(name))
             no_decay.append(param)
         else:
-            print("weight decay: {}".format(name))
+            # print("weight decay: {}".format(name))
             decay.append(param)
     return [
         {'params': no_decay, 'weight_decay': 0.},
@@ -80,7 +80,6 @@ def init_parser():
                         dest='batch_size')
     parser.add_argument('--use_mega_gating', default=False, type=bool)
     parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')
-
 
     parser.add_argument('--weight-decay', default=5e-2, type=float, help='weight decay (default: 1e-4)')
 
@@ -174,14 +173,16 @@ def main(args):
     model = create_model(data_info['img_size'], data_info['n_classes'], args)
     print(model)
     model.cuda(args.gpu)
-    s = 0
-    for name, param in model.named_parameters():
-        if param.requires_grad and 'blocks.0' in name:
-            print(name, param.shape, param.numel())
-            s += param.numel()
-            print(s)
-    print(s)
-    # n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # s = 0
+    # for name, param in model.named_parameters():
+    #     if param.requires_grad and 'blocks.0' in name:
+    #         print(name, param.shape, param.numel())
+    #         s += param.numel()
+    #         print(s)
+    # print(s)
+    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    if args.wandb:
+        wandb.log({'n_parameters': n_parameters})
     # print(f'Number of params: {format(n_parameters, ",")}')
     print(Fore.GREEN + '*' * 80)
     logger.debug(f"Creating model: {model_name}")

@@ -5,6 +5,7 @@
 
 import torch
 import torch.nn.functional as F
+from einops import rearrange
 from torch import Tensor, nn
 from torch.nn import Parameter
 
@@ -43,10 +44,13 @@ class MovingAverageGatedAttention(nn.Module):
             no_rel_pos_bias=False,
             max_positions=1024,
             patch_amount=None,
+            heads_num=1,
             args=None,
     ):
         super().__init__()
         self.embed_dim = embed_dim
+        self.heads_num = 3#heads_num
+        self.embed_dim_per_head = zdim // heads_num
         self.hdim = hdim
         self.zdim = zdim
         self.ndim = ndim
@@ -132,7 +136,9 @@ class MovingAverageGatedAttention(nn.Module):
         # scaled attention
         q = q * self.scaling
         # B x K x C x C
-        qk = torch.matmul(q, k.transpose(2, 3))
+        # q = rearrange(q,'b k (h d) n -> b (k h) n d', h=self.heads_num)
+        # k = rearrange(k,'b k (h d) n -> b (k h) n d', h=self.heads_num)
+        qk = torch.matmul(q, k.transpose(-2, -1))
         if self.rel_pos_bias is not None:
             bias = self.rel_pos_bias(slen)
             qk = qk + bias
@@ -145,10 +151,10 @@ class MovingAverageGatedAttention(nn.Module):
         return attn_weights
 
     def add_mask(self, qk, mask):
-        B_, _, seq_len,_ = qk.size()
+        B_, _, seq_len, _ = qk.size()
         initial_size = qk.size()
         nW = mask.shape[0]
-        qk = qk.view(B_ // nW, nW,1, seq_len, seq_len) + mask.unsqueeze(1).unsqueeze(0)
+        qk = qk.view(B_ // nW, nW, 1, seq_len, seq_len) + mask.unsqueeze(1).unsqueeze(0)
         qk = qk.view(-1, 1, seq_len, seq_len)
         assert qk.size() == initial_size
         return qk
