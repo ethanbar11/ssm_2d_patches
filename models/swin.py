@@ -9,12 +9,52 @@ import torch
 import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import to_2tuple, trunc_normal_
-from utils.drop_path import DropPath
+# from utils.drop_path import DropPath
 import torch
 from einops.layers.torch import Rearrange
 from .SPT import ShiftedPatchTokenization
 from einops import rearrange
 from .mega.moving_average_gated_attention import MovingAverageGatedAttention
+from .mega.mega_layer import MegaLayer
+from .mega.exponential_moving_average import MultiHeadEMA
+from .mega.two_d_ssm_recursive import TwoDimensionalSSM
+
+
+def drop_path(x, dim, drop_prob: float = 0., training: bool = False, scale_by_keep: bool = True):
+    """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
+
+    This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
+    the original name is misleading as 'Drop Connect' is a different form of dropout in a separate paper...
+    See discussion: https://github.com/tensorflow/tpu/issues/494#issuecomment-532968956 ... I've opted for
+    changing the layer and argument names to 'drop path' rather than mix DropConnect as a layer name and use
+    'survival rate' as the argument.
+
+    """
+    if drop_prob == 0. or not training:
+        return x
+    keep_prob = 1 - drop_prob
+    shape = (x.shape[dim],) + (1,) * (x.ndim - dim - 1)  # work with diff dim tensors, not just 2D ConvNets
+    random_tensor = x.new_empty(shape).bernoulli_(keep_prob)
+    if keep_prob > 0.0 and scale_by_keep:
+        random_tensor.div_(keep_prob)
+    return x * random_tensor
+
+
+class DropPath(nn.Module):
+    """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
+    """
+
+    def __init__(self, drop_prob=None, dim=0, scale_by_keep=True):
+        super(DropPath, self).__init__()
+        self.drop_prob = drop_prob
+        self.dim = dim
+        self.scale_by_keep = scale_by_keep
+
+    def forward(self, x):
+        return drop_path(x, self.dim, self.drop_prob, self.training, self.scale_by_keep)
+
+    def extra_repr(self) -> str:
+        return 'p={}, dim={}, keep_scale={}'.format(self.drop_prob, self.dim, self.scale_by_keep)
 
 
 class Mlp(nn.Module):
@@ -192,8 +232,8 @@ class SwinTransformerBlock(nn.Module):
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
                  act_layer=nn.GELU, norm_layer=nn.LayerNorm, is_LSA=False, args=None):
         super().__init__()
-
         self.dim = dim
+        self.external_bias = True
         self.input_resolution = input_resolution
         self.num_heads = num_heads
         self.window_size = window_size
@@ -204,18 +244,48 @@ class SwinTransformerBlock(nn.Module):
             self.shift_size = 0
             self.window_size = min(self.input_resolution)
         assert 0 <= self.shift_size < self.window_size, "shift_size must in 0-window_size"
-
         self.norm1 = norm_layer(dim)
+        '''
         if self.shift_size == 0:
             if issubclass(norm_layer, nn.LayerNorm):
                 norm_type = 'layernorm'
             print(norm_type)
+            if args.no_dropout_mega:
+                drop = 0 
+                attn_drop = 0
+
+            # if True:#not self.use_megaMovingAverageGatedAttention_layer:
+            #     self.attn = MovingAverageGatedAttention(embed_dim=dim, zdim=dim // 4, hdim=dim * 2, ndim=args.ndim,
+            #                                             attention_activation=self.attention_activation,
+            #                                             patch_amount=window_size ** 2, dropout=drop,
+            #                                             attention_dropout=attn_drop, hidden_dropout=attn_drop,
+            #                                             no_rel_pos_bias=True,
+            #                                             drop_path=drop_path, norm_type=norm_type, args=args)
+            # else:
+            #     mega_layer = MegaLayer(embed_dim = dim ,hidden_dim = dim * 2, z_dim = dim // 4  ,n_dim = args.ndim,ffn_embed_dim = dim , dropout = drop, attention_dropout = attn_drop, hidden_dropout = 0.0,activation_dropout = 0.,
+            #     drop_path=drop_path, chunk_size = -1, truncation=None, max_positions = 1024, activation='silu', attention_activation=self.attention_activation, norm_type ='layernorm', no_rel_pos_bias = False) 
+            #     self.attn = mega_layer
+
+        else:
+        '''
+        self.use_mega_gating = args.use_mega_gating
+        if args.use_mega_gating:
+            if issubclass(norm_layer, nn.LayerNorm):
+                norm_type = 'layernorm'
+            print(norm_type)
+            if args.no_dropout_mega:
+                drop = 0
+                attn_drop = 0
+            real_ema = args.ema
+            args.ema = None
             self.attn = MovingAverageGatedAttention(embed_dim=dim, zdim=dim // 4, hdim=dim * 2, ndim=args.ndim,
-                                                    attention_activation='softmax',
+                                                    # attention_activation='relu',
                                                     patch_amount=window_size ** 2, dropout=drop,
                                                     attention_dropout=attn_drop, hidden_dropout=attn_drop,
                                                     no_rel_pos_bias=True,
                                                     drop_path=drop_path, norm_type=norm_type, args=args)
+            args.ema = real_ema
+
         else:
             self.attn = WindowAttention(
                 dim, window_size=to_2tuple(self.window_size), num_heads=num_heads,
@@ -252,6 +322,20 @@ class SwinTransformerBlock(nn.Module):
 
         self.register_buffer("attn_mask", attn_mask)  # No parameter
 
+        if args.ema == 'ssm_2d':
+            self.move = TwoDimensionalSSM(embed_dim=dim, ndim=args.ndim, truncation=None,
+                                          L=self.input_resolution[0] ** 2, args=args)
+        # elif args.ema == 's4nd':
+        #     config_path = args.s4nd_config
+        #     # Read from config path with ymal
+        #     import yaml
+        #     config = yaml.load(open(config_path, 'r'), Loader=yaml.FullLoader)
+        #     self.move = S4ND(**config)
+        elif args.ema == 'ema':
+            self.move = MultiHeadEMA(embed_dim=dim, ndim=args.ndim, bidirectional=True, truncation=None)
+        else:
+            self.move = nn.Identity()
+
     def forward(self, x):
         # H, W = self.input_resolution
         B, L, C = x.shape
@@ -262,6 +346,14 @@ class SwinTransformerBlock(nn.Module):
         shortcut = x
         x = self.norm1(x)
         x = x.view(B, H, H, C)
+
+        # ! EMA:
+        if self.external_bias:
+            sh = x.shape
+            x = rearrange(x, 'b l1 l2 h -> (l1 l2) b h')
+            x = self.move(x)
+            x = rearrange(x, '(l1 l2) b h -> b l1 l2 h', l1=H)
+            assert x.shape == sh
 
         # cyclic shift
         if self.shift_size > 0:
@@ -274,12 +366,25 @@ class SwinTransformerBlock(nn.Module):
         x_windows = x_windows.view(-1, self.window_size * self.window_size, C)  # nW*B, window_size*window_size, C
 
         # W-MSA/SW-MSA
+        if self.use_mega_gating:
+            sh = x_windows.shape
+            x_windows = rearrange(x_windows, 'b l h -> l b h')
+            attn_windows = self.attn(x_windows, mask=self.attn_mask)
+            attn_windows = rearrange(attn_windows, 'l b h -> b l h')
+            x_windows = rearrange(x_windows, 'l b h -> b l h')
+            assert x_windows.shape == sh
+
+        else:
+            attn_windows = self.attn(x_windows, mask=self.attn_mask)
+        '''
         if self.shift_size == 0:
-            x_windows =  (x_windows, 'b l h -> l b h')
+            x_windows = rearrange(x_windows, 'b l h -> l b h')
             attn_windows = self.attn(x_windows, mask=self.attn_mask)  # nW*B, window_size*window_size, C
             attn_windows = rearrange(attn_windows, 'l b h -> b l h')
         else:
+            # Mega(no ema, only gating) or Regular
             attn_windows = self.attn(x_windows, mask=self.attn_mask)  # nW*B, window_size*window_size, C
+        '''
         # merge windows
         attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
         shifted_x = window_reverse(attn_windows, self.window_size, H, H)  # B H' W' C

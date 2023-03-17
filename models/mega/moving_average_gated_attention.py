@@ -106,7 +106,7 @@ class MovingAverageGatedAttention(nn.Module):
         nn.init.normal_(self.gamma, mean=0.0, std=std)
         nn.init.constant_(self.beta, 0.0)
 
-    def element_attention(self, q, k):
+    def element_attention(self, q, k, mask=None):
         slen = k.size(2)
         lengths = slen
         # B x K x C x C
@@ -115,6 +115,8 @@ class MovingAverageGatedAttention(nn.Module):
         if self.rel_pos_bias is not None:
             bias = self.rel_pos_bias(torch.Tensor([slen]))
             qk = qk + bias
+        if mask is not None:
+            qk = self.add_mask(qk, mask)
 
         if self.attention_activation == 'relu2':
             attn_weights = relu2(qk)
@@ -125,19 +127,31 @@ class MovingAverageGatedAttention(nn.Module):
 
         return attn_weights
 
-    def softmax_attention(self, q, k):
+    def softmax_attention(self, q, k, mask=None):
         slen = k.size(2)
         # scaled attention
         q = q * self.scaling
         # B x K x C x C
         qk = torch.matmul(q, k.transpose(2, 3))
-        # C x C
         if self.rel_pos_bias is not None:
             bias = self.rel_pos_bias(slen)
             qk = qk + bias
 
+        # C x C
+        if mask is not None:
+            qk = self.add_mask(qk, mask)
+
         attn_weights = F.softmax(qk, dim=-1)
         return attn_weights
+
+    def add_mask(self, qk, mask):
+        B_, _, seq_len,_ = qk.size()
+        initial_size = qk.size()
+        nW = mask.shape[0]
+        qk = qk.view(B_ // nW, nW,1, seq_len, seq_len) + mask.unsqueeze(1).unsqueeze(0)
+        qk = qk.view(-1, 1, seq_len, seq_len)
+        assert qk.size() == initial_size
+        return qk
 
     def forward(self, x, mask=None) -> Tensor:
         """Input shape: Time x Batch x Channel
@@ -197,9 +211,9 @@ class MovingAverageGatedAttention(nn.Module):
                 v = v.reshape(bsz, nc, self.chunk_size, self.hdim)
 
         if self.attention_activation == 'softmax':
-            attn_weights = self.softmax_attention(q, k)
+            attn_weights = self.softmax_attention(q, k, mask)
         else:
-            attn_weights = self.element_attention(q, k)
+            attn_weights = self.element_attention(q, k, mask)
 
         v = self.hidden_dropout(v, batch_first=True)
         kernel = self.attention_dropout(attn_weights)

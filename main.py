@@ -35,7 +35,7 @@ def create_optimization_groups(model, args):
     decay = []
     no_decay = []
     # skip_list = ['pos_embedding','pos_embed']
-    skip_list =[]
+    skip_list = []
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue  # frozen weights
@@ -62,13 +62,14 @@ def init_parser():
 
     parser.add_argument('--dataset', default='CIFAR10', choices=['CIFAR10', 'CIFAR100', 'T-IMNET', 'SVHN'], type=str,
                         help='Image Net dataset path')
-    parser.add_argument('--ema', default=None, choices=['ema', 'ssm_2d', 's4nd','none', None], type=str,
+    parser.add_argument('--ema', default=None, choices=['ema', 'ssm_2d', 's4nd', 'none', None], type=str,
                         help='Image Net dataset path')
 
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
 
     parser.add_argument('--print-freq', default=1, type=int, metavar='N', help='log frequency (by iteration)')
+    parser.add_argument('--no_dropout_mega', default=False, type=bool)
 
     # Optimization hyperparams
     parser.add_argument('--epochs', default=100, type=int, metavar='N', help='number of total epochs to run')
@@ -77,8 +78,9 @@ def init_parser():
 
     parser.add_argument('-b', '--batch_size', default=128, type=int, metavar='N', help='mini-batch size (default: 128)',
                         dest='batch_size')
-
+    parser.add_argument('--use_mega_gating', default=False, type=bool)
     parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')
+
 
     parser.add_argument('--weight-decay', default=5e-2, type=float, help='weight decay (default: 1e-4)')
 
@@ -172,11 +174,11 @@ def main(args):
     model = create_model(data_info['img_size'], data_info['n_classes'], args)
     print(model)
     model.cuda(args.gpu)
-    s=0
+    s = 0
     for name, param in model.named_parameters():
         if param.requires_grad and 'blocks.0' in name:
-            print(name, param.shape,param.numel())
-            s+=param.numel()
+            print(name, param.shape, param.numel())
+            s += param.numel()
             print(s)
     print(s)
     # n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
