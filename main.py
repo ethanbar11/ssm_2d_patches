@@ -117,8 +117,8 @@ def init_parser():
 
     # Mega params
     parser.add_argument('--embed_dim', type=int, default=192, help='seed')
-    parser.add_argument('--zdim', type=int, default=None, help='seed')
-    parser.add_argument('--hidden_dim', type=int, default=None, help='seed')
+    parser.add_argument('--zdim_ratio', type=float, default=None, help='seed')
+    parser.add_argument('--hidden_dim_ratio', type=float, default=None, help='seed')
     parser.add_argument('--ffn_hidden_dim', type=int, default=192, help='seed')
     parser.add_argument('--ndim', type=int, default=16, help='seed')
 
@@ -183,8 +183,9 @@ def main(args):
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     if args.wandb:
         wandb.log({'n_parameters': n_parameters})
-    # print(f'Number of params: {format(n_parameters, ",")}')
+    print(f'Number of params: {format(n_parameters, ",")}')
     print(Fore.GREEN + '*' * 80)
+    # exit()
     logger.debug(f"Creating model: {model_name}")
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.debug(f'Number of params: {format(n_parameters, ",")}')

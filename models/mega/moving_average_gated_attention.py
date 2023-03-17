@@ -82,6 +82,9 @@ class MovingAverageGatedAttention(nn.Module):
             self.move = nn.Identity()
 
         self.v_proj = nn.Linear(embed_dim, hdim)
+        print("zdim: ", zdim)
+        print("embed_dim: ", embed_dim)
+        print("hdim: ", hdim)
         self.mx_proj = nn.Linear(embed_dim, zdim + hdim + 2 * embed_dim)
         self.h_proj = nn.Linear(hdim, embed_dim)
 
