@@ -279,7 +279,9 @@ class SwinTransformerBlock(nn.Module):
                 attn_drop = 0
             real_ema = args.ema
             args.ema = None
-            self.attn = MovingAverageGatedAttention(embed_dim=dim, zdim=dim, hdim=dim * 2, ndim=args.ndim,
+            zdim = args.zdim if args.zdim is not None else dim // 4
+            hdim = args.hidden_dim if args.hidden_dim is not None else dim * 2
+            self.attn = MovingAverageGatedAttention(embed_dim=dim, zdim=zdim, hdim=hdim, ndim=args.ndim,
                                                     # attention_activation='relu',
                                                     patch_amount=window_size ** 2, dropout=drop,
                                                     attention_dropout=attn_drop, hidden_dropout=attn_drop,

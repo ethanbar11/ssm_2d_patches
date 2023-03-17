@@ -117,9 +117,9 @@ def init_parser():
 
     # Mega params
     parser.add_argument('--embed_dim', type=int, default=192, help='seed')
-    parser.add_argument('--hidden_dim', type=int, default=192, help='seed')
+    parser.add_argument('--zdim', type=int, default=None, help='seed')
+    parser.add_argument('--hidden_dim', type=int, default=None, help='seed')
     parser.add_argument('--ffn_hidden_dim', type=int, default=192, help='seed')
-    parser.add_argument('--zdim', type=int, default=192, help='seed')
     parser.add_argument('--ndim', type=int, default=16, help='seed')
 
     parser.add_argument('--beta', default=1.0, type=float,
