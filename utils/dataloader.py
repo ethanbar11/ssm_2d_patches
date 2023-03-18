@@ -46,7 +46,6 @@ def datainfo(logger, args):
 
 
 def dataload(args, augmentations, normalize, data_info):
-    test_dataset = None
     if args.dataset == 'CIFAR10':
         train_dataset = datasets.CIFAR10(
             root=args.data_path, train=True, download=True, transform=augmentations)
@@ -83,9 +82,5 @@ def dataload(args, augmentations, normalize, data_info):
             root=os.path.join(args.data_path, 'tiny_imagenet', 'val'),
             transform=transforms.Compose([
                 transforms.Resize(data_info['img_size']), transforms.ToTensor(), *normalize]))
-        test_dataset = datasets.ImageFolder(
-            root=os.path.join(args.data_path, 'tiny_imagenet', 'test'),
-            transform=transforms.Compose([
-                transforms.Resize(data_info['img_size']), transforms.ToTensor(), *normalize]))
 
-    return train_dataset, val_dataset, test_dataset
+    return train_dataset, val_dataset
