@@ -1,0 +1,8 @@
+numpy
+sympy
+wandb
+pandas
+coloarama
+tensorboard
+einops
+timm
