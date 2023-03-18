@@ -28,24 +28,23 @@ import warnings
 warnings.filterwarnings("ignore", category=Warning)
 
 best_acc1 = 0
-MODELS = ['vit', 'swin', 'pit', 'cait', 't2t', 'mega']
+MODELS = ['vit', 'swin', 'pit', 'cait', 't2t']
 
 
 def create_optimization_groups(model, args):
     decay = []
     no_decay = []
-    # skip_list = ['pos_embedding','pos_embed']
-    skip_list = []
+    skip_list = ['pos_embedding']
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue  # frozen weights
 
         if name.endswith(".bias") or (len(param.shape) == 1 and name.endswith(".weight")) or name in skip_list or (
                 '.move.' in name and 'omega' not in name):
-            # print("no weight decay: {}".format(name))
+            print("no weight decay: {}".format(name))
             no_decay.append(param)
         else:
-            # print("weight decay: {}".format(name))
+            print("weight decay: {}".format(name))
             decay.append(param)
     return [
         {'params': no_decay, 'weight_decay': 0.},
@@ -62,15 +61,13 @@ def init_parser():
 
     parser.add_argument('--dataset', default='CIFAR10', choices=['CIFAR10', 'CIFAR100', 'T-IMNET', 'SVHN'], type=str,
                         help='Image Net dataset path')
-    parser.add_argument('--ema', default=None, choices=['ema', 'ssm_2d', 's4nd', 'none', None], type=str,
+    parser.add_argument('--ema', default=None, choices=['ema', 'ssm_2d', 's4nd', None], type=str,
                         help='Image Net dataset path')
 
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
 
     parser.add_argument('--print-freq', default=1, type=int, metavar='N', help='log frequency (by iteration)')
-    parser.add_argument('--save_directory', default=None, type=str)
-    parser.add_argument('--no_dropout_mega', default=False, type=bool)
 
     # Optimization hyperparams
     parser.add_argument('--epochs', default=100, type=int, metavar='N', help='number of total epochs to run')
@@ -79,7 +76,7 @@ def init_parser():
 
     parser.add_argument('-b', '--batch_size', default=128, type=int, metavar='N', help='mini-batch size (default: 128)',
                         dest='batch_size')
-    parser.add_argument('--use_mega_gating', default=False, type=bool)
+
     parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')
 
     parser.add_argument('--weight-decay', default=5e-2, type=float, help='weight decay (default: 1e-4)')
@@ -111,18 +108,10 @@ def init_parser():
     parser.add_argument('--resume', default=False, help='Version')
 
     parser.add_argument('--aa', action='store_false', help='Auto augmentation used'),
-    parser.add_argument('--use_test', action='store_true', help='Auto augmentation used'),
 
     parser.add_argument('--smoothing', type=float, default=0.1, help='Label smoothing (default: 0.1)')
 
     parser.add_argument('--cm', action='store_false', help='Use Cutmix')
-
-    # Mega params
-    parser.add_argument('--embed_dim', type=int, default=192, help='seed')
-    parser.add_argument('--zdim_ratio', type=float, default=None, help='seed')
-    parser.add_argument('--hidden_dim_ratio', type=float, default=None, help='seed')
-    parser.add_argument('--ffn_hidden_dim', type=int, default=192, help='seed')
-    parser.add_argument('--ndim', type=int, default=16, help='seed')
 
     parser.add_argument('--beta', default=1.0, type=float,
                         help='hyperparameter beta (default: 1)')
@@ -153,6 +142,7 @@ def init_parser():
 
     parser.add_argument('--directions_amount', type=int, default=4, help='number directions, can be 2 or 4')
     parser.add_argument('--save_kernels_and_exit', type=bool, default=False, help='Should')
+    parser.add_argument('--ema_type', type=str, default='ema', help='Should')
     parser.add_argument('--s4nd_config', type=str, default=r'/home/ethan_baron/mega/s4nd_configs/s4nd.yaml',
                         help='Should')
     parser.add_argument('--dataset_percentage', type=float, default=1.0, help='Should')
@@ -173,21 +163,10 @@ def main(args):
     data_info = datainfo(logger, args)
 
     model = create_model(data_info['img_size'], data_info['n_classes'], args)
-    print(model)
+
     model.cuda(args.gpu)
-    # s = 0
-    # for name, param in model.named_parameters():
-    #     if param.requires_grad and 'blocks.0' in name:
-    #         print(name, param.shape, param.numel())
-    #         s += param.numel()
-    #         print(s)
-    # print(s)
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    if args.wandb:
-        wandb.log({'n_parameters': n_parameters},commit=False)
-    print(f'Number of params: {format(n_parameters, ",")}')
+
     print(Fore.GREEN + '*' * 80)
-    # exit()
     logger.debug(f"Creating model: {model_name}")
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.debug(f'Number of params: {format(n_parameters, ",")}')
@@ -238,7 +217,6 @@ def main(args):
 
     if args.aa == True:
         print(Fore.YELLOW + '*' * 80)
-        print(Fore.YELLOW + 'Autoaugmentation used')
         logger.debug('Autoaugmentation used')
 
         if 'CIFAR' in args.dataset:
@@ -279,16 +257,13 @@ def main(args):
 
     augmentations = transforms.Compose(augmentations)
 
-    train_dataset, val_dataset, test_dataset = dataload(args, augmentations, normalize, data_info)
+    train_dataset, val_dataset = dataload(args, augmentations, normalize, data_info)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, num_workers=args.workers, pin_memory=True,
         batch_sampler=RASampler(len(train_dataset), args.batch_size, 1, args.ra, shuffle=True, drop_last=True))
     val_loader = torch.utils.data.DataLoader(
         val_dataset, batch_size=args.batch_size, shuffle=False, pin_memory=True, num_workers=args.workers)
-    if args.use_test:
-        test_loader = torch.utils.data.DataLoader(
-            test_dataset, batch_size=args.batch_size, shuffle=False, pin_memory=True, num_workers=args.workers)
     '''
         Training
     '''
@@ -296,7 +271,7 @@ def main(args):
     optimizer = torch.optim.AdamW(groups, lr=args.lr, weight_decay=args.weight_decay)
     scheduler = build_scheduler(args, optimizer, len(train_loader))
 
-    # summary(model, (3, data_info['img_size'], data_info['img_size']))
+    summary(model, (3, data_info['img_size'], data_info['img_size']))
 
     print()
     print("Beginning training")
@@ -315,8 +290,6 @@ def main(args):
     for epoch in tqdm(range(args.epochs)):
         lr = train(train_loader, model, criterion, optimizer, epoch, scheduler, args)
         acc1 = validate(val_loader, model, criterion, lr, args, epoch=epoch)
-        # if args.use_test:
-        #     acc1_test = validate(test_loader, model, criterion, lr, args, epoch=epoch, test=True)
         torch.save({
             'model_state_dict': model.state_dict(),
             'epoch': epoch,
@@ -339,9 +312,6 @@ def main(args):
             }, os.path.join(save_path, 'best.pth'))
 
         print(f'Best acc1 {best_acc1:.2f}')
-        if args.wandb:
-            # Log best accuracy
-            wandb.log({"best_acc1": best_acc1}, commit=False)
         print('*' * 80)
         print(Style.RESET_ALL)
 
@@ -457,9 +427,8 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
     return lr
 
 
-def validate(val_loader, model, criterion, lr, args, epoch=None, test=False):
+def validate(val_loader, model, criterion, lr, args, epoch=None):
     model.eval()
-
     loss_val, acc1_val = 0, 0
     n = 0
     with torch.no_grad():
@@ -479,25 +448,17 @@ def validate(val_loader, model, criterion, lr, args, epoch=None, test=False):
 
             if args.print_freq >= 0 and i % args.print_freq == 0:
                 avg_loss, avg_acc1 = (loss_val / n), (acc1_val / n)
-                letter = 'V' if not test else 'Test'
                 progress_bar(i, len(val_loader),
-                             f'[Epoch {epoch + 1}][{letter}][{i}]   Loss: {avg_loss:.4e}   Top-1: {avg_acc1:6.2f}   LR: {lr:.6f}')
+                             f'[Epoch {epoch + 1}][V][{i}]   Loss: {avg_loss:.4e}   Top-1: {avg_acc1:6.2f}   LR: {lr:.6f}')
     print()
 
     print(Fore.BLUE)
     print('*' * 80)
 
-    if test:
-        logger_dict.update(keys[4], avg_loss)
-        logger_dict.update(keys[5], avg_acc1)
-    else:
-        logger_dict.update(keys[2], avg_loss)
-        logger_dict.update(keys[3], avg_acc1)
+    logger_dict.update(keys[2], avg_loss)
+    logger_dict.update(keys[3], avg_acc1)
     if args.wandb:
-        if test:
-            wandb.log({"Test Loss": avg_loss, "Test Acc": avg_acc1})
-        else:
-            wandb.log({"Val Loss": avg_loss, "Val Acc": avg_acc1})
+        wandb.log({"Val Loss": avg_loss, "Val Acc": avg_acc1})
     writer.add_scalar("Loss/val", avg_loss, epoch)
     writer.add_scalar("Acc/val", avg_acc1, epoch)
 
@@ -557,6 +518,6 @@ if __name__ == '__main__':
     global keys
 
     logger_dict = Logger_dict(logger, save_path)
-    keys = ['T Loss', 'T Top-1', 'V Loss', 'V Top-1', 'Test Loss', 'Test Top-1']
+    keys = ['T Loss', 'T Top-1', 'V Loss', 'V Top-1']
 
     main(args)
