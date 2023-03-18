@@ -111,7 +111,6 @@ def init_parser():
     parser.add_argument('--resume', default=False, help='Version')
 
     parser.add_argument('--aa', action='store_false', help='Auto augmentation used'),
-    parser.add_argument('--use_test', action='store_true', help='Auto augmentation used'),
 
     parser.add_argument('--smoothing', type=float, default=0.1, help='Label smoothing (default: 0.1)')
 
@@ -238,7 +237,6 @@ def main(args):
 
     if args.aa == True:
         print(Fore.YELLOW + '*' * 80)
-        print(Fore.YELLOW + 'Autoaugmentation used')
         logger.debug('Autoaugmentation used')
 
         if 'CIFAR' in args.dataset:
@@ -279,16 +277,13 @@ def main(args):
 
     augmentations = transforms.Compose(augmentations)
 
-    train_dataset, val_dataset, test_dataset = dataload(args, augmentations, normalize, data_info)
+    train_dataset, val_dataset = dataload(args, augmentations, normalize, data_info)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, num_workers=args.workers, pin_memory=True,
         batch_sampler=RASampler(len(train_dataset), args.batch_size, 1, args.ra, shuffle=True, drop_last=True))
     val_loader = torch.utils.data.DataLoader(
         val_dataset, batch_size=args.batch_size, shuffle=False, pin_memory=True, num_workers=args.workers)
-    if args.use_test:
-        test_loader = torch.utils.data.DataLoader(
-            test_dataset, batch_size=args.batch_size, shuffle=False, pin_memory=True, num_workers=args.workers)
     '''
         Training
     '''
@@ -315,8 +310,6 @@ def main(args):
     for epoch in tqdm(range(args.epochs)):
         lr = train(train_loader, model, criterion, optimizer, epoch, scheduler, args)
         acc1 = validate(val_loader, model, criterion, lr, args, epoch=epoch)
-        # if args.use_test:
-        #     acc1_test = validate(test_loader, model, criterion, lr, args, epoch=epoch, test=True)
         torch.save({
             'model_state_dict': model.state_dict(),
             'epoch': epoch,
@@ -457,9 +450,8 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
     return lr
 
 
-def validate(val_loader, model, criterion, lr, args, epoch=None, test=False):
+def validate(val_loader, model, criterion, lr, args, epoch=None):
     model.eval()
-
     loss_val, acc1_val = 0, 0
     n = 0
     with torch.no_grad():
@@ -479,25 +471,17 @@ def validate(val_loader, model, criterion, lr, args, epoch=None, test=False):
 
             if args.print_freq >= 0 and i % args.print_freq == 0:
                 avg_loss, avg_acc1 = (loss_val / n), (acc1_val / n)
-                letter = 'V' if not test else 'Test'
                 progress_bar(i, len(val_loader),
-                             f'[Epoch {epoch + 1}][{letter}][{i}]   Loss: {avg_loss:.4e}   Top-1: {avg_acc1:6.2f}   LR: {lr:.6f}')
+                             f'[Epoch {epoch + 1}][V][{i}]   Loss: {avg_loss:.4e}   Top-1: {avg_acc1:6.2f}   LR: {lr:.6f}')
     print()
 
     print(Fore.BLUE)
     print('*' * 80)
 
-    if test:
-        logger_dict.update(keys[4], avg_loss)
-        logger_dict.update(keys[5], avg_acc1)
-    else:
-        logger_dict.update(keys[2], avg_loss)
-        logger_dict.update(keys[3], avg_acc1)
+    logger_dict.update(keys[2], avg_loss)
+    logger_dict.update(keys[3], avg_acc1)
     if args.wandb:
-        if test:
-            wandb.log({"Test Loss": avg_loss, "Test Acc": avg_acc1})
-        else:
-            wandb.log({"Val Loss": avg_loss, "Val Acc": avg_acc1})
+        wandb.log({"Val Loss": avg_loss, "Val Acc": avg_acc1})
     writer.add_scalar("Loss/val", avg_loss, epoch)
     writer.add_scalar("Acc/val", avg_acc1, epoch)
 
@@ -557,6 +541,6 @@ if __name__ == '__main__':
     global keys
 
     logger_dict = Logger_dict(logger, save_path)
-    keys = ['T Loss', 'T Top-1', 'V Loss', 'V Top-1', 'Test Loss', 'Test Top-1']
+    keys = ['T Loss', 'T Top-1', 'V Loss', 'V Top-1']
 
     main(args)
