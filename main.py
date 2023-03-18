@@ -309,7 +309,7 @@ def main(args):
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler'])
         final_epoch = args.epochs
-        args.epochs = 5#final_epoch - (checkpoint['epoch'] + 1)
+        args.epochs = final_epoch - (checkpoint['epoch'] + 1)
 
     for epoch in tqdm(range(args.epochs)):
         lr = train(train_loader, model, criterion, optimizer, epoch, scheduler, args)

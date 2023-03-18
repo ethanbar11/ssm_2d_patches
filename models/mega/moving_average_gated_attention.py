@@ -80,6 +80,7 @@ class MovingAverageGatedAttention(nn.Module):
             self.move = MultiHeadEMA(embed_dim, ndim=ndim, bidirectional=bidirectional, truncation=truncation)
         else:
             self.move = nn.Identity()
+        print('Mega move is: ', args.ema)
 
         self.v_proj = nn.Linear(embed_dim, hdim)
         print("zdim: ", zdim)
