@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 
-DATA_DIR = r'/media/data2/ethan_baron/small_transformer/dataset/tiny_imagenet'
+DATA_DIR = r'./tiny_imagenet'
 # # Define training and validation data paths
 TRAIN_DIR = os.path.join(DATA_DIR, 'train')
 VALID_DIR = os.path.join(DATA_DIR, 'val')

@@ -49,7 +49,7 @@ def create_model(img_size, n_classes, args):
     elif args.model == 'mega':
         patch_size = 4 if img_size == 32 else 8
         model = VisionMEGA(img_size=img_size, patch_size=patch_size, num_classes=n_classes, depth=9,
-                           embed_dim=args.embed_dim, hidden_dim=args.hidden_dim,
-                           ffn_hidden_dim=args.ffn_hidden_dim, zdim=args.zdim, ndim=args.ndim, args=args)
+                           embed_dim=args.embed_dim, hidden_dim=args.embed_dim,
+                           ffn_hidden_dim=args.embed_dim, zdim=args.embed_dim, ndim=args.ndim, args=args)
 
     return model

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+import os
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,11 +19,24 @@ _c2r = torch.view_as_real
 _r2c = torch.view_as_complex
 
 
-def plot_heatmap(x, title):
+def plot_heatmap(x, title, save_image=False, save_path=None):
     import matplotlib.pyplot as plt
     import seaborn as sns
-    sns.heatmap(torch.abs(x).cpu().detach().numpy()).set_title(title)
-    plt.show()
+    img = x.cpu().detach().numpy()
+    if save_image:
+        print('Saving image to: ', save_path)
+        dirname = os.path.dirname(save_path)
+
+        # Check if the directory exists
+        if not os.path.isdir(dirname):
+            os.makedirs(dirname)
+        sv = sns.heatmap(img)# cbar=False)
+        figure = sv.get_figure()
+        figure.savefig(save_path, bbox_inches='tight', pad_inches=0.01, dpi=400)
+        # plt.show()
+        figure.clf()
+    else:
+        plt.show()
 
 
 class TwoDimensionalSSM(nn.Module):
@@ -35,6 +49,7 @@ class TwoDimensionalSSM(nn.Module):
             force_coeff_calc=False,
             use_static_kernel=True,
             args=None,
+            save_path=None
     ):
         super().__init__()
         print(L)
@@ -64,6 +79,7 @@ class TwoDimensionalSSM(nn.Module):
                 self.matrices[key][symbol] = matrix.cuda()
 
         self.use_static_kernel = use_static_kernel
+        self.save_kernel = save_path
         self.last_kernel = None
         # H x N
         if self.is_complex:
@@ -272,6 +288,11 @@ class TwoDimensionalSSM(nn.Module):
         fft_len = int(math.sqrt(fft_len))
         k = self.kernel(fft_len).permute(2, 0, 1)  # H x L x L
         s = 0
+        if self.save_kernel:
+            for i in range(k.shape[0]):
+                # Create image path and save it
+                img_path = os.path.join(self.save_kernel, f'kernel_{i}.png')
+                plot_heatmap(k[i], f'kernel {i}', save_image=True, save_path=img_path)
         kernel_size = k.size(1)
         # Pad x with zeros to power 2 of self.one_side_length
         # x = torch.nn.functional.pad(x, (self.one_side_length ** 2 - x.shape[-1],0, 0, 0, 0, 0))
@@ -314,4 +335,3 @@ class TwoDimensionalSSM(nn.Module):
         # B x D x L -> L x B x D
         out = F.silu(out.permute(2, 0, 1) + residual)
         return out
-

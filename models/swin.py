@@ -4,6 +4,8 @@
 # Licensed under The MIT License [see LICENSE for details]
 # Written by Ze Liu
 # --------------------------------------------------------
+import os
+
 import math
 import torch
 import torch.nn as nn
@@ -231,7 +233,7 @@ class SwinTransformerBlock(nn.Module):
 
     def __init__(self, dim, input_resolution, num_heads, window_size=7, shift_size=0,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
-                 act_layer=nn.GELU, norm_layer=nn.LayerNorm, is_LSA=False, args=None):
+                 act_layer=nn.GELU, norm_layer=nn.LayerNorm, is_LSA=False, args=None,save_path=None):
         super().__init__()
         self.dim = dim
         self.external_bias = True
@@ -283,6 +285,7 @@ class SwinTransformerBlock(nn.Module):
             hdim = math.floor(args.hidden_dim_ratio * dim) if args.hidden_dim_ratio is not None else dim * 2
             self.attn = MovingAverageGatedAttention(embed_dim=dim, zdim=zdim, hdim=hdim, ndim=args.ndim,
                                                     # attention_activation='relu',
+                                                    heads_num=num_heads,
                                                     patch_amount=window_size ** 2, dropout=drop,
                                                     attention_dropout=attn_drop, hidden_dropout=attn_drop,
                                                     no_rel_pos_bias=True,
@@ -327,7 +330,7 @@ class SwinTransformerBlock(nn.Module):
 
         if args.ema == 'ssm_2d':
             self.move = TwoDimensionalSSM(embed_dim=dim, ndim=args.ndim, truncation=None,
-                                          L=self.input_resolution[0] ** 2, args=args)
+                                          L=self.input_resolution[0] ** 2, args=args,save_path=save_path)
         # elif args.ema == 's4nd':
         #     config_path = args.s4nd_config
         #     # Read from config path with ymal
@@ -489,6 +492,7 @@ class BasicLayer(nn.Module):
         self.use_checkpoint = use_checkpoint
 
         # build blocks
+
         self.blocks = nn.ModuleList([
             SwinTransformerBlock(dim=dim, input_resolution=input_resolution,
                                  num_heads=num_heads, window_size=window_size,
@@ -497,7 +501,7 @@ class BasicLayer(nn.Module):
                                  qkv_bias=qkv_bias, qk_scale=qk_scale,
                                  drop=drop, attn_drop=attn_drop,
                                  drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
-                                 norm_layer=norm_layer, is_LSA=is_LSA, args=args)
+                                 norm_layer=norm_layer, is_LSA=is_LSA, args=args)#, save_path=args.save_path.format(i))
             for i in range(depth)])
 
         # patch merging layer
@@ -605,6 +609,10 @@ class SwinTransformer(nn.Module):
         self.patch_norm = patch_norm
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
         self.mlp_ratio = mlp_ratio
+        if args.save_directory is not None:
+            self.save_and_exit=True
+        else:
+            self.save_and_exit=False
 
         """ Base """
         if not is_SPT:
@@ -632,6 +640,8 @@ class SwinTransformer(nn.Module):
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
             is_first = i_layer == 0
+            if args.save_directory:
+                args.save_path = os.path.join(args.save_directory, 'layer_{}'.format(i_layer), 'block_{}')
             layer = BasicLayer(
                 dim=int(embed_dim * 2 ** i_layer),
                 input_resolution=(self.img_resolution[0] // (2 ** i_layer),
@@ -676,4 +686,6 @@ class SwinTransformer(nn.Module):
     def forward(self, x):
         x = self.forward_features(x)
         x = self.head(x)
+        if self.save_and_exit:
+            exit()
         return x

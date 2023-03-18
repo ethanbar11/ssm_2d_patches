@@ -49,7 +49,7 @@ class MovingAverageGatedAttention(nn.Module):
     ):
         super().__init__()
         self.embed_dim = embed_dim
-        self.heads_num = 3#heads_num
+        self.heads_num = heads_num
         self.embed_dim_per_head = zdim // heads_num
         self.hdim = hdim
         self.zdim = zdim
@@ -139,8 +139,8 @@ class MovingAverageGatedAttention(nn.Module):
         # scaled attention
         q = q * self.scaling
         # B x K x C x C
-        # q = rearrange(q,'b k (h d) n -> b (k h) n d', h=self.heads_num)
-        # k = rearrange(k,'b k (h d) n -> b (k h) n d', h=self.heads_num)
+        # q = rearrange(q,'b k l (h d) -> b k l h d', h=self.heads_num)
+        # k = rearrange(k,'b k l (h d) -> b k l h d', h=self.heads_num)
         qk = torch.matmul(q, k.transpose(-2, -1))
         if self.rel_pos_bias is not None:
             bias = self.rel_pos_bias(slen)
