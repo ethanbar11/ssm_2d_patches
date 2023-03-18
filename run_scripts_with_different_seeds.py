@@ -1,5 +1,5 @@
-# dataset = "CIFAR100"
-dataset = "T-IMNET"
+dataset = "CIFAR100"
+# dataset = "T-IMNET"
 command = "CUDA_VISIBLE_DEVICES={i} python main.py --model {model} --dataset {dataset} " \
           "--project {dataset}_for_rebuttal_with_different_seeds --name {model_name},seed={seed} --seed {seed} --ema {ema}"
 
@@ -22,6 +22,8 @@ for model_name, ema_options in models.items():
                                                                                                        dataset=dataset,
                                                                                                        model_name=model_name,
                                                                                                        seed=seed)
+            if option == 'ssm_2d':
+                command_to_run += " --n_ssm=8 --ndim=16"
             print(command_to_run)
             counter += 1
             if counter > 7:
