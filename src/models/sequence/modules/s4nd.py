@@ -294,7 +294,8 @@ class S4ND(SequenceModule):
         # Compute D term in state space equation - essentially a skip connection
         # B, C, H, L (not flat)
         if not self.out_channels:
-            y = y + contract('bh...,ch->bch...', u, self.D) # u.unsqueeze(-3) * self.D.unsqueeze(-1)
+            #TODO: DELETE
+            y = F.silu(y) + contract('bh...,ch->bch...', u, self.D) # u.unsqueeze(-3) * self.D.unsqueeze(-1)
 
         # Reshape to flatten channels
         # B, H, L (not flat)

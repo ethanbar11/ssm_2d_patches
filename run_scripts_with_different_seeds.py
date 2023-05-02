@@ -5,7 +5,8 @@ command = "CUDA_VISIBLE_DEVICES={i} python main.py --model {model} --dataset {da
           " --smooth_v_as_well --use_relative_pos_embedding" \
           " --s4nd_config \"/media/data2/ethan_baron/ssm_2d_patches/s4nd_configs/s4nd_current.yaml\" " \
           "--n_ssm {n_ssm} --ndim {ndim}"
-models = {'vit': ['ssm_2d', 's4nd']}
+# models = {'vit': ['ssm_2d', 's4nd']}
+models = {'mega': ['ssm_2d', 's4nd']}
 seed_amount = 3
 counter = 0
 for dataset in datasets:
