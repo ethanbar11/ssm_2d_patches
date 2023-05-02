@@ -50,7 +50,7 @@ class VisionMEGA(nn.Module):
 
         assert img_size % patch_size == 0
         self.patch_embed = embed_layer(img_size=img_size, patch_size=patch_size, in_chans=in_chans,
-                                       embed_dim=embed_dim, bias=True)  # , impl=patch_impl)
+                                       embed_dim=embed_dim)#, bias=True)  # , impl=patch_impl)
 
         num_patches = self.patch_embed.num_patches
         if no_pos_emb:
