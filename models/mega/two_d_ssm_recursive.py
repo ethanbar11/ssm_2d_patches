@@ -30,7 +30,7 @@ def plot_heatmap(x, title, save_image=False, save_path=None):
         # Check if the directory exists
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
-        sv = sns.heatmap(img)# cbar=False)
+        sv = sns.heatmap(img)  # cbar=False)
         figure = sv.get_figure()
         figure.savefig(save_path, bbox_inches='tight', pad_inches=0.01, dpi=400)
         # plt.show()
@@ -56,7 +56,7 @@ class TwoDimensionalSSM(nn.Module):
         self.is_2_dim = True
         self.truncation = truncation
         self.embed_dim = embed_dim
-        self.ndim = ndim
+        self.ndim = args.ndim
         self.n_ssm = args.n_ssm
         self.is_complex = args.complex_ssm
         print(args.complex_ssm)
@@ -333,5 +333,6 @@ class TwoDimensionalSSM(nn.Module):
         out = out.type_as(x)
         out = rearrange(out, 'b d l1 l2 -> b d (l1 l2)')
         # B x D x L -> L x B x D
-        out = F.silu(out.permute(2, 0, 1) + residual)
+        out = out.permute(2, 0, 1) + residual
+        # out = F.silu(out.permute(2, 0, 1) + residual)
         return out

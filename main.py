@@ -61,10 +61,12 @@ def init_parser():
     parser.add_argument('--project', default='', type=str, help='project name')
 
     parser.add_argument('--dataset', default='CIFAR10', choices=['CIFAR10', 'CIFAR100', 'T-IMNET', 'SVHN'], type=str,
-                        help='Image Net dataset path')
+                        help='Dataset')
     parser.add_argument('--ema', default=None, choices=['ema', 'ssm_2d', 's4nd', 'none', None], type=str,
-                        help='Image Net dataset path')
+                        help='EMA type')
 
+    parser.add_argument('--s4nd_config', default=None, type=str,
+                        help='S4nd config file path')
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
 
@@ -147,20 +149,27 @@ def init_parser():
     parser.add_argument('--is_SPT', action='store_true', help='Shifted Patch Tokenization')
 
     parser.add_argument('--n_ssm', type=int, default=1, help='number of internal ssms')
-    parser.add_argument('--complex_ssm', type=bool, default=False, help='Use complex ssm')
+    parser.add_argument('--complex_ssm',action = 'store_true', default=False, help='Use complex ssm')
     parser.add_argument('--use_positional_encoding', type=bool, default=False, help='Use complex ssm')
 
     parser.add_argument('--directions_amount', type=int, default=4, help='number directions, can be 2 or 4')
     parser.add_argument('--save_kernels_and_exit', type=bool, default=False, help='Should')
-    parser.add_argument('--s4nd_config', type=str, default=r'/home/ethan_baron/mega/s4nd_configs/s4nd.yaml',
-                        help='Should')
     parser.add_argument('--dataset_percentage', type=float, default=1.0, help='Should')
 
+    ## Vit params
+    parser.add_argument('--use_cls_token', action='store_true', default=False,
+                        help='Whether ViT should use cls token or mean the ' +
+                             'patch tokens')
+    parser.add_argument('--smooth_v_as_well', action='store_true', default=False,
+                        help='Whether to smooth the v or just k&q in ViT')
+    parser.add_argument('--use_relative_pos_embedding', action='store_true', default=False,
+                        help='Whether to rel pos embed or abs pos embed in ViT')
     return parser
 
 
 def main(args):
     if args.project != '':
+        # should_resume = True if args.resume != None and args.resume != '' else False
         wandb.init(project=args.project, name=args.name, config=args)
         args.wandb = True
     else:
@@ -183,7 +192,7 @@ def main(args):
     # print(s)
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     if args.wandb:
-        wandb.log({'n_parameters': n_parameters},commit=False)
+        wandb.log({'n_parameters': n_parameters}, commit=False)
     print(f'Number of params: {format(n_parameters, ",")}')
     print(Fore.GREEN + '*' * 80)
     # exit()
@@ -300,6 +309,8 @@ def main(args):
     lr = optimizer.param_groups[0]["lr"]
 
     if args.resume:
+        if args.resume == 'auto':
+            args.resume = os.path.join(save_path, 'checkpoint.pth')
         checkpoint = torch.load(args.resume)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])

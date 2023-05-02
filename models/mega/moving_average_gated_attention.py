@@ -3,6 +3,8 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
+
 import torch
 import torch.nn.functional as F
 from einops import rearrange
@@ -16,7 +18,7 @@ from .sequence_norm import SequenceNorm
 from .exponential_moving_average import MultiHeadEMA
 from .two_d_ssm_recursive import TwoDimensionalSSM
 from .mega_utils import relu2, laplace, get_activation_fn
-
+from src.models.sequence.modules.s4nd import S4ND
 
 class MovingAverageGatedAttention(nn.Module):
     """Exponential Moving Average Gated Attention.
@@ -75,17 +77,13 @@ class MovingAverageGatedAttention(nn.Module):
             # Read from config path with ymal
             import yaml
             config = yaml.load(open(config_path, 'r'), Loader=yaml.FullLoader)
-            self.move = S4ND(**config)
+            self.move = S4ND(**config, d_model=embed_dim, l_max=int(math.sqrt(patch_amount)),return_state=False)
         elif args.ema == 'ema':
             self.move = MultiHeadEMA(embed_dim, ndim=ndim, bidirectional=bidirectional, truncation=truncation)
         else:
             self.move = nn.Identity()
-        print('Mega move is: ', args.ema)
 
         self.v_proj = nn.Linear(embed_dim, hdim)
-        print("zdim: ", zdim)
-        print("embed_dim: ", embed_dim)
-        print("hdim: ", hdim)
         self.mx_proj = nn.Linear(embed_dim, zdim + hdim + 2 * embed_dim)
         self.h_proj = nn.Linear(hdim, embed_dim)
 

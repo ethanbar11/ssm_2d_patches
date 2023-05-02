@@ -1,3 +1,4 @@
+import math
 import torch
 from torch import nn, einsum
 from utils.drop_path import DropPath
@@ -6,7 +7,9 @@ from einops.layers.torch import Rearrange
 from .SPT import ShiftedPatchTokenization
 from models.mega.exponential_moving_average import MultiHeadEMA
 from models.mega.two_d_ssm_recursive import TwoDimensionalSSM
+from .mega.relative_positional_bias import RelativePositionalBias
 
+from src.models.sequence.modules.s4nd import S4ND
 
 # helpers
 
@@ -68,8 +71,7 @@ class Attention(nn.Module):
         self.dim = dim
         self.inner_dim = inner_dim
         self.attend = nn.Softmax(dim=-1)
-        self.to_qkv = nn.Linear(self.dim, self.inner_dim * 3, bias=False)
-        init_weights(self.to_qkv)
+        self.init_qkv()
         self.to_out = nn.Sequential(
             nn.Linear(self.inner_dim, self.dim),
             nn.Dropout(dropout)
@@ -81,6 +83,10 @@ class Attention(nn.Module):
             self.mask = torch.nonzero((self.mask == 1), as_tuple=False)
         else:
             self.mask = None
+
+    def init_qkv(self):
+        self.to_qkv = nn.Linear(self.dim, self.inner_dim * 3, bias=False)
+        init_weights(self.to_qkv)
 
     def forward(self, x):
         b, n, _, h = *x.shape, self.heads
@@ -114,10 +120,14 @@ class Attention(nn.Module):
 class EmaAttention(Attention):
     def __init__(self, dim, num_patches, heads=8, dim_head=64, dropout=0., is_LSA=False,
                  ndim=2, bidirectional=True, args=None):
-        super().__init__(dim, num_patches, heads, dim_head, dropout, is_LSA)
-        self.to_v = nn.Linear(self.dim, self.inner_dim, bias=False)
-        self.to_qk = nn.Linear(self.dim, self.inner_dim * 2, bias=False)
-
+        super().__init__(dim, num_patches, heads, dim_head, dropout, is_LSA, args)
+        self.inner_dim = dim_head * heads
+        self.dim = dim
+        self.use_cls_token = args.use_cls_token
+        self.smooth_v_as_well = args.smooth_v_as_well
+        self.use_relative_pos_embedding = args.use_relative_pos_embedding
+        if self.use_relative_pos_embedding:
+            self.rel_pos_bias = RelativePositionalBias(num_patches + 1)
         if args.ema == 'ssm_2d':
             self.move = TwoDimensionalSSM(self.dim, ndim=ndim, truncation=None, L=num_patches, args=args)
         elif args.ema == 's4nd':
@@ -125,19 +135,45 @@ class EmaAttention(Attention):
             # Read from config path with ymal
             import yaml
             config = yaml.load(open(config_path, 'r'), Loader=yaml.FullLoader)
-            self.move = S4ND(**config)
+            config['n_ssm'] = args.n_ssm
+            config['d_state'] = args.ndim
+            self.move = S4ND(**config, d_model=self.dim, l_max=int(math.sqrt(num_patches)), return_state=False)
         elif args.ema == 'ema':
             self.move = MultiHeadEMA(self.dim, ndim=ndim, bidirectional=bidirectional, truncation=None)
+        # TODO: DELETE THIS
+        # Go over self.move named parameters and print name, shape, total size
+        # tot = 0
+        # for name, param in self.move.named_parameters():
+        #     print(name, param.shape, param.numel())
+        #     tot += param.numel()
+        # print('Total:',tot)
+        # exit()
+
+    def init_qkv(self):
+        self.to_qk = nn.Linear(self.dim, self.inner_dim * 2, bias=False)
+        self.to_v = nn.Linear(self.dim, self.inner_dim, bias=False)
+        init_weights(self.to_qk)
+        init_weights(self.to_v)
 
     def forward(self, x):
         b, n, _, h = *x.shape, self.heads
-        x_without_cls_token = x[:, 1:, :]
-        cls_token = x[:, 0, :].unsqueeze(1)
-        x_without_cls_token_moved = rearrange(self.move(rearrange(x_without_cls_token, 'b l h -> l b h')),
+        if self.use_cls_token:
+            x_to_be_moved = x[:, 1:, :]
+            cls_token = x[:, 0, :].unsqueeze(1)
+        else:
+            x_to_be_moved = x
+        x_without_cls_token_moved = rearrange(self.move(rearrange(x_to_be_moved, 'b l h -> l b h')),
                                               'l b h -> b l h')
-        x_moved = torch.cat([cls_token, x_without_cls_token_moved], dim=1)
+        x_moved = x_without_cls_token_moved
+        if self.use_cls_token:
+            x_moved = torch.cat([cls_token, x_without_cls_token_moved], dim=1)
+
         qk = self.to_qk(x_moved).chunk(2, dim=-1)
-        v = self.to_v(x)
+
+        if self.smooth_v_as_well:
+            v = self.to_v(x_moved)
+        else:
+            v = self.to_v(x)
         q, k = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h=h), qk)
         v = rearrange(v, 'b n (h d) -> b h n d', h=h)
 
@@ -151,6 +187,9 @@ class EmaAttention(Attention):
             dots[:, :, self.mask[:, 0], self.mask[:, 1]] = -987654321
 
         attn = self.attend(dots)
+        if self.use_relative_pos_embedding:
+            bias = self.rel_pos_bias(k.size(2))
+            attn = attn + bias
         out = einsum('b h i j, b h j d -> b h i d', attn, v)
 
         out = rearrange(out, 'b h n d -> b n (h d)')
@@ -199,6 +238,8 @@ class ViT(nn.Module):
         self.patch_dim = channels * patch_height * patch_width
         self.dim = dim
         self.num_classes = num_classes
+        self.use_cls_token = args.use_cls_token
+        self.use_relative_pos_embedding = args.use_relative_pos_embedding
 
         if not is_SPT:
             self.to_patch_embedding = nn.Sequential(
@@ -209,7 +250,10 @@ class ViT(nn.Module):
         else:
             self.to_patch_embedding = ShiftedPatchTokenization(3, self.dim, patch_size, is_pe=True)
 
-        self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches + 1, self.dim))
+        real_patch_amount = self.num_patches + 1 if self.use_cls_token else self.num_patches
+        self.pos_embedding = nn.Parameter(
+            torch.randn(1, real_patch_amount, self.dim)) if not self.use_relative_pos_embedding else \
+            torch.zeros(1, real_patch_amount, self.dim).requires_grad_(False).cuda()
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.dim))
         self.dropout = nn.Dropout(emb_dropout)
@@ -225,18 +269,20 @@ class ViT(nn.Module):
 
     def forward(self, img):
         # patch embedding
-
+        # B x C x H x W -> B x N x D
         x = self.to_patch_embedding(img)
 
         b, n, _ = x.shape
-
-
-        cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=b)
-
-        x = torch.cat((cls_tokens, x), dim=1)
+        if self.use_cls_token:
+            cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=b)
+            x = torch.cat((cls_tokens, x), dim=1)
         x += self.pos_embedding[:, :(n + 1)]
         x = self.dropout(x)
 
         x = self.transformer(x)
-
-        return self.mlp_head(x[:, 0])
+        if self.use_cls_token:
+            return self.mlp_head(x[:, 0])
+        else:
+            # B x N x D -> B x D
+            x = torch.mean(x, dim=1)
+            return self.mlp_head(x)
