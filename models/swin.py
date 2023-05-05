@@ -20,6 +20,7 @@ from .mega.moving_average_gated_attention import MovingAverageGatedAttention
 from .mega.mega_layer import MegaLayer
 from .mega.exponential_moving_average import MultiHeadEMA
 from .mega.two_d_ssm_recursive import TwoDimensionalSSM
+from src.models.sequence.modules.s4nd import S4ND
 
 
 def drop_path(x, dim, drop_prob: float = 0., training: bool = False, scale_by_keep: bool = True):
@@ -331,14 +332,19 @@ class SwinTransformerBlock(nn.Module):
         if args.ema == 'ssm_2d':
             self.move = TwoDimensionalSSM(embed_dim=dim, ndim=args.ndim, truncation=None,
                                           L=self.input_resolution[0] ** 2, args=args,save_path=save_path)
-        # elif args.ema == 's4nd':
-        #     config_path = args.s4nd_config
-        #     # Read from config path with ymal
-        #     import yaml
-        #     config = yaml.load(open(config_path, 'r'), Loader=yaml.FullLoader)
-        #     self.move = S4ND(**config)
+
+        elif args.ema == 's4nd':
+            config_path = args.s4nd_config
+            # Read from config path with ymal
+            import yaml
+            config = yaml.load(open(config_path, 'r'), Loader=yaml.FullLoader)
+            config['n_ssm'] = args.n_ssm
+            config['d_state'] = args.ndim
+            self.move = S4ND(**config, d_model=self.dim, l_max=int(math.sqrt(self.input_resolution[0] ** 2)), return_state=False)
+            print('S4ND', self.move)
         elif args.ema == 'ema':
             self.move = MultiHeadEMA(embed_dim=dim, ndim=args.ndim, bidirectional=True, truncation=None)
+
         else:
             self.move = nn.Identity()
 

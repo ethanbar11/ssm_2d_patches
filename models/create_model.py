@@ -16,7 +16,7 @@ def create_model(img_size, n_classes, args):
     elif args.model == 'cait':
         patch_size = 4 if img_size == 32 else 8
         model = CaiT(img_size=img_size, patch_size=patch_size, num_classes=n_classes, stochastic_depth=args.sd,
-                     is_LSA=args.is_LSA, is_SPT=args.is_SPT)
+                     is_LSA=args.is_LSA, is_SPT=args.is_SPT,args=args)
 
     elif args.model == 'pit':
         patch_size = 2 if img_size == 32 else 4

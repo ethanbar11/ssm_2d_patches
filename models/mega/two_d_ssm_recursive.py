@@ -38,6 +38,15 @@ def plot_heatmap(x, title, save_image=False, save_path=None):
     else:
         plt.show()
 
+def plot_histogram(k):
+    import seaborn
+    import matplotlib.pyplot as plt
+    hist = torch.max(torch.max(k, dim=1)[0], dim=1)[0]
+    hist = hist.cpu().detach().numpy()
+    seaborn.histplot(hist,bins=100)
+    plt.show()
+
+
 
 class TwoDimensionalSSM(nn.Module):
     def __init__(
@@ -333,6 +342,6 @@ class TwoDimensionalSSM(nn.Module):
         out = out.type_as(x)
         out = rearrange(out, 'b d l1 l2 -> b d (l1 l2)')
         # B x D x L -> L x B x D
-        out = out.permute(2, 0, 1) + residual
+        out = out.permute(2, 0, 1)# + residual
         # out = F.silu(out.permute(2, 0, 1) + residual)
         return out

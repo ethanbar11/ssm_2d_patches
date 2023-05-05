@@ -236,7 +236,6 @@ class S4ND(SequenceModule):
         # Compute SS Kernel
         # 1 kernel for each axis in L
         k = [kernel(L=l, rate=rate)[0] for kernel, l in zip(self.kernel, L_kernel)]
-
         if self.bidirectional: # halves channels
             k = [torch.chunk(_k, 2, dim=-3) for _k in k] # (C H L)
             k = [
@@ -295,7 +294,8 @@ class S4ND(SequenceModule):
         # B, C, H, L (not flat)
         if not self.out_channels:
             #TODO: DELETE
-            y = F.silu(y) + contract('bh...,ch->bch...', u, self.D) # u.unsqueeze(-3) * self.D.unsqueeze(-1)
+            # y = F.silu(y) + contract('bh...,ch->bch...', u, self.D) # u.unsqueeze(-3) * self.D.unsqueeze(-1)
+            y = y + contract('bh...,ch->bch...', u, self.D) # u.unsqueeze(-3) * self.D.unsqueeze(-1)
 
         # Reshape to flatten channels
         # B, H, L (not flat)
