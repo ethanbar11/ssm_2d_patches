@@ -1,7 +1,7 @@
 datasets = ['CIFAR100']#["T-IMNET"]
 # dataset = "T-IMNET"
 command = "CUDA_VISIBLE_DEVICES={i} python main.py --model {model} --dataset {dataset} " \
-          "--project {dataset}_Cait_Comparison --name {ema} --seed {seed} --ema {ema}" \
+          "--project {dataset}_Cait_Comparison --name {ema}_no_v_smoothing --seed {seed} --ema {ema}" \
           " --s4nd_config \"/media/data2/ethan_baron/ssm_2d_patches/s4nd_configs/s4nd_current.yaml\" " \
           "--n_ssm {n_ssm} --ndim {ndim}"
 # models = {'vit': ['ssm_2d', 's4nd']}

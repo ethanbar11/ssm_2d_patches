@@ -227,7 +227,7 @@ class EegDataset(SequenceDataset):
 
         if self.ss_clip_len == 0:
             # define train sampler
-            train_target = self.dataset_train["target"].data.astype(np.int)
+            train_target = self.dataset_train["target"].data.astype(int)
             class_sample_count = np.array(
                 [len(np.where(train_target == t)[0]) for t in np.unique(train_target)]
             )

@@ -371,10 +371,10 @@ class InformerDataset(Dataset):
         seq_x = seq_x.astype(np.float32)
         seq_y = seq_y.astype(np.float32)
         if self.timeenc == 0:
-            mark = mark.astype(np.int64)
+            mark = mark.astype(int)
         else:
             mark = mark.astype(np.float32)
-        mask = mask.astype(np.int64)
+        mask = mask.astype(int)
 
         return torch.tensor(seq_x), torch.tensor(seq_y), torch.tensor(mark), torch.tensor(mask)
 
