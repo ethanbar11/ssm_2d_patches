@@ -38,14 +38,14 @@ def plot_heatmap(x, title, save_image=False, save_path=None):
     else:
         plt.show()
 
+
 def plot_histogram(k):
     import seaborn
     import matplotlib.pyplot as plt
     hist = torch.max(torch.max(k, dim=1)[0], dim=1)[0]
     hist = hist.cpu().detach().numpy()
-    seaborn.histplot(hist,bins=100)
+    seaborn.histplot(hist, bins=100)
     plt.show()
-
 
 
 class TwoDimensionalSSM(nn.Module):
@@ -67,6 +67,7 @@ class TwoDimensionalSSM(nn.Module):
         self.embed_dim = embed_dim
         self.ndim = args.ndim
         self.n_ssm = args.n_ssm
+        self.normalization = nn.LayerNorm(embed_dim) if args.normalize else nn.Identity()
         self.is_complex = args.complex_ssm
         print(args.complex_ssm)
         self.directions_amount = args.directions_amount
@@ -342,6 +343,6 @@ class TwoDimensionalSSM(nn.Module):
         out = out.type_as(x)
         out = rearrange(out, 'b d l1 l2 -> b d (l1 l2)')
         # B x D x L -> L x B x D
-        out = out.permute(2, 0, 1)# + residual
+        out = out.permute(2, 0, 1) + residual
         # out = F.silu(out.permute(2, 0, 1) + residual)
-        return out
+        return self.normalization(out)

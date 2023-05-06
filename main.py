@@ -164,6 +164,8 @@ def init_parser():
                         help='Whether to smooth the v or just k&q in ViT')
     parser.add_argument('--use_relative_pos_embedding', action='store_true', default=False,
                         help='Whether to rel pos embed or abs pos embed in ViT')
+    parser.add_argument('--normalize', action='store_true', default=False,
+                        help='Perform normalization after SSM')
     return parser
 
 
