@@ -179,7 +179,6 @@ def main(args):
     global best_acc1
 
     torch.cuda.set_device(args.gpu)
-
     data_info = datainfo(logger, args)
 
     model = create_model(data_info['img_size'], data_info['n_classes'], args)
@@ -313,7 +312,7 @@ def main(args):
     if args.resume:
         if args.resume == 'auto':
             args.resume = os.path.join(save_path, 'checkpoint.pth')
-        checkpoint = torch.load(args.resume)
+        checkpoint = torch.load(args.resume)#, map_location='cpu')
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler'])
