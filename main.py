@@ -28,7 +28,7 @@ import warnings
 warnings.filterwarnings("ignore", category=Warning)
 
 best_acc1 = 0
-MODELS = ['vit', 'swin', 'pit', 'cait', 't2t', 'mega']
+MODELS = ['vit', 'swin', 'pit', 'cait', 't2t', 'mega','convit']
 
 
 def create_optimization_groups(model, args):

@@ -233,6 +233,8 @@ class TwoDimensionalSSM(nn.Module):
         else:
             C_1 = self.C_1
             C_2 = self.C_2
+        # C_1 = torch.softmax(C_1, dim=1)
+        # C_2 = torch.softmax(C_2, dim=1)
         output_horizontal = einsum(outputs['horizontal'], C_1 * self.scale, "l H N ,H N->l H")
         output_vertical = einsum(outputs['vertical'], C_2 * self.scale, "l H N ,H N->l H")
         # L x L x H
@@ -242,10 +244,11 @@ class TwoDimensionalSSM(nn.Module):
         output[0, :, :, ] *= 2
         output[:, 0, :, ] *= 2
         output[0, 0] /= 4
+
         if self.is_complex:
             output = output.real
         self.last_kernel = output
-
+        # output = rearrange(torch.softmax(rearrange(output,'h w c -> (h w) c'),dim=0),'(h w) c -> h w c',h=8)
         return output
 
     def compute_sympy_kernel(self):

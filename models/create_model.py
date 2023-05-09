@@ -4,7 +4,7 @@ from .pit import PiT
 from .swin import SwinTransformer
 from .t2t import T2T_ViT
 from models.vision_mega import VisionMEGA
-
+from models.convit import ConvitVisionTransformer
 
 def create_model(img_size, n_classes, args):
     if args.model == 'vit':
@@ -12,6 +12,11 @@ def create_model(img_size, n_classes, args):
         model = ViT(img_size=img_size, patch_size=patch_size, num_classes=n_classes, dim=args.embed_dim,
                     mlp_dim_ratio=2, depth=9, heads=12, dim_head=args.embed_dim // 12,
                     stochastic_depth=args.sd, is_SPT=args.is_SPT, is_LSA=args.is_LSA, args=args)
+
+    elif args.model == "convit":
+        patch_size = 4 if img_size == 32 else 8
+        model = ConvitVisionTransformer(img_size=img_size,patch_size=patch_size, num_classes=n_classes, depth=9,
+                                        embed_dim=args.embed_dim,mlp_ratio=2,num_heads=12,drop_rate=args.sd,args=args)
 
     elif args.model == 'cait':
         patch_size = 4 if img_size == 32 else 8
@@ -51,5 +56,7 @@ def create_model(img_size, n_classes, args):
         model = VisionMEGA(img_size=img_size, patch_size=patch_size, num_classes=n_classes, depth=9,
                            embed_dim=args.embed_dim, hidden_dim=args.embed_dim,
                            ffn_hidden_dim=args.embed_dim, zdim=args.embed_dim, ndim=args.ndim, args=args)
+
+
 
     return model
