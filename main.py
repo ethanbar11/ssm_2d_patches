@@ -157,15 +157,15 @@ def init_parser():
     parser.add_argument('--dataset_percentage', type=float, default=1.0, help='Should')
 
     ## Vit params
-    parser.add_argument('--use_cls_token', action='store_true', default=False,
-                        help='Whether ViT should use cls token or mean the ' +
-                             'patch tokens')
     parser.add_argument('--smooth_v_as_well', action='store_true', default=False,
                         help='Whether to smooth the v or just k&q in ViT')
     parser.add_argument('--use_relative_pos_embedding', action='store_true', default=False,
                         help='Whether to rel pos embed or abs pos embed in ViT')
     parser.add_argument('--normalize', action='store_true', default=False,
                         help='Perform normalization after SSM')
+    parser.add_argument('--no_pos_embedding', action='store_true', default=False,
+                        help='Whether to rel pos embed or abs pos embed in ViT')
+
     return parser
 
 

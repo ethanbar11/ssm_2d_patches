@@ -123,8 +123,8 @@ class EmaAttention(Attention):
         super().__init__(dim, num_patches, heads, dim_head, dropout, is_LSA, args)
         self.inner_dim = dim_head * heads
         self.dim = dim
-        self.use_cls_token = args.use_cls_token
-        self.smooth_v_as_well = args.smooth_v_as_well
+        # self.use_cls_token = args.use_cls_token
+        self.smooth_v_as_well = True #args.smooth_v_as_well
         self.use_relative_pos_embedding = args.use_relative_pos_embedding
         if self.use_relative_pos_embedding:
             self.rel_pos_bias = RelativePositionalBias(num_patches + 1)
@@ -157,16 +157,12 @@ class EmaAttention(Attention):
 
     def forward(self, x):
         b, n, _, h = *x.shape, self.heads
-        if self.use_cls_token:
-            x_to_be_moved = x[:, 1:, :]
-            cls_token = x[:, 0, :].unsqueeze(1)
-        else:
-            x_to_be_moved = x
+        x_to_be_moved = x[:, 1:, :]
+        cls_token = x[:, 0, :].unsqueeze(1)
         x_without_cls_token_moved = rearrange(self.move(rearrange(x_to_be_moved, 'b l h -> l b h')),
                                               'l b h -> b l h')
         x_moved = x_without_cls_token_moved
-        if self.use_cls_token:
-            x_moved = torch.cat([cls_token, x_without_cls_token_moved], dim=1)
+        x_moved = torch.cat([cls_token, x_without_cls_token_moved], dim=1)
 
         qk = self.to_qk(x_moved).chunk(2, dim=-1)
 
@@ -238,8 +234,8 @@ class ViT(nn.Module):
         self.patch_dim = channels * patch_height * patch_width
         self.dim = dim
         self.num_classes = num_classes
-        self.use_cls_token = args.use_cls_token
         self.use_relative_pos_embedding = args.use_relative_pos_embedding
+        self.no_pos_embedding = args.no_pos_embedding
 
         if not is_SPT:
             self.to_patch_embedding = nn.Sequential(
@@ -250,9 +246,9 @@ class ViT(nn.Module):
         else:
             self.to_patch_embedding = ShiftedPatchTokenization(3, self.dim, patch_size, is_pe=True)
 
-        real_patch_amount = self.num_patches + 1 if self.use_cls_token else self.num_patches
+        real_patch_amount = self.num_patches + 1
         self.pos_embedding = nn.Parameter(
-            torch.randn(1, real_patch_amount, self.dim)) if not self.use_relative_pos_embedding else \
+            torch.randn(1, real_patch_amount, self.dim)) if (not self.use_relative_pos_embedding and not self.no_pos_embedding) else \
             torch.zeros(1, real_patch_amount, self.dim).requires_grad_(False).cuda()
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.dim))
@@ -273,16 +269,10 @@ class ViT(nn.Module):
         x = self.to_patch_embedding(img)
 
         b, n, _ = x.shape
-        if self.use_cls_token:
-            cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=b)
-            x = torch.cat((cls_tokens, x), dim=1)
+        cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=b)
+        x = torch.cat((cls_tokens, x), dim=1)
         x += self.pos_embedding[:, :(n + 1)]
         x = self.dropout(x)
 
         x = self.transformer(x)
-        if self.use_cls_token:
-            return self.mlp_head(x[:, 0])
-        else:
-            # B x N x D -> B x D
-            x = torch.mean(x, dim=1)
-            return self.mlp_head(x)
+        return self.mlp_head(x[:, 0])
