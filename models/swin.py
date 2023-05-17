@@ -348,6 +348,13 @@ class SwinTransformerBlock(nn.Module):
         else:
             self.move = nn.Identity()
 
+        # Print the total amount of params
+        tot = 0
+        for name,w in dict(self.move.named_parameters()).items():
+            print(name, w.shape, w.numel())
+            tot += w.numel()
+        print('Total params in:',args.ema, tot)
+        exit()
     def forward(self, x):
         # H, W = self.input_resolution
         B, L, C = x.shape
