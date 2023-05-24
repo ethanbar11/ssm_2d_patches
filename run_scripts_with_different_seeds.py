@@ -5,7 +5,6 @@ import itertools
 command = "python main.py --model {model} --dataset {dataset} " \
           "--project {dataset}_Cait_Comparison --name {name} --seed {seed} --ema {ema} " \
           "--n_ssm {n_ssm} --ndim {ndim} --sd {sd} --gpu {gpu}"
-          #" --s4nd_config \"/media/data2/ethan_baron/ssm_2d_patches/s4nd_configs/s4nd_current.yaml\" " \
 # models = {'vit': ['ssm_2d', 's4nd']}
 params = {'sd': [0.1, 0.15, 0.2, 0.3], 'n_ssm': [2, 8], 'dataset': ['CIFAR100'], 'model': ['convit'],
           'ema': ['ssm_2d'], 'seed': [0], 'ndim': [16]}
