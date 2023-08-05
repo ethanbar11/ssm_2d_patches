@@ -172,7 +172,8 @@ class TwoDimensionalSSM(nn.Module):
         A = {}
         if self.is_complex:
             for symbol, tensor in self.A_angle.items():
-                angle = torch.sigmoid(tensor) * 2 * math.pi  # angle between [0,2pi]
+                # TODO: Delete this if not working
+                angle = torch.sigmoid(tensor) * math.pi + math.pi / 2  # angle between [pi/2, 3pi/2]
                 radius = torch.sigmoid(self.A_radius[symbol])  # radius between [0,1]
                 A[symbol] = torch.polar(radius, angle)
         else:
