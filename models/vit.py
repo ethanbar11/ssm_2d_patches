@@ -10,6 +10,8 @@ from models.mega.two_d_ssm_recursive import TwoDimensionalSSM
 from .mega.relative_positional_bias import RelativePositionalBias
 
 from src.models.sequence.modules.s4nd import S4ND
+from .mix_ffn import MixFFN
+
 
 # helpers
 
@@ -45,6 +47,7 @@ class FeedForward(nn.Module):
     def __init__(self, dim, num_patches, hidden_dim, dropout=0.):
         super().__init__()
         self.dim = dim
+
         self.hidden_dim = hidden_dim
         self.num_patches = num_patches
 
@@ -119,17 +122,17 @@ class Attention(nn.Module):
 
 class EmaAttention(Attention):
     def __init__(self, dim, num_patches, heads=8, dim_head=64, dropout=0., is_LSA=False,
-                 ndim=2, bidirectional=True, args=None):
+                 bidirectional=True, args=None):
         super().__init__(dim, num_patches, heads, dim_head, dropout, is_LSA, args)
         self.inner_dim = dim_head * heads
         self.dim = dim
         # self.use_cls_token = args.use_cls_token
-        self.smooth_v_as_well = True #args.smooth_v_as_well
+        self.smooth_v_as_well = True  # args.smooth_v_as_well
         self.use_relative_pos_embedding = args.use_relative_pos_embedding
         if self.use_relative_pos_embedding:
             self.rel_pos_bias = RelativePositionalBias(num_patches + 1)
         if args.ema == 'ssm_2d':
-            self.move = TwoDimensionalSSM(self.dim, ndim=ndim, truncation=None, L=num_patches, args=args)
+            self.move = TwoDimensionalSSM(self.dim, ndim=args.ndim, truncation=None, L=num_patches, args=args)
         elif args.ema == 's4nd':
             config_path = args.s4nd_config
             # Read from config path with ymal
@@ -139,7 +142,9 @@ class EmaAttention(Attention):
             config['d_state'] = args.ndim
             self.move = S4ND(**config, d_model=self.dim, l_max=int(math.sqrt(num_patches)), return_state=False)
         elif args.ema == 'ema':
-            self.move = MultiHeadEMA(self.dim, ndim=ndim, bidirectional=bidirectional, truncation=None)
+            self.move = MultiHeadEMA(self.dim, ndim=args.ndim, bidirectional=bidirectional, truncation=None)
+        else:
+            self.move = nn.Identity()
         # TODO: DELETE THIS
         # Go over self.move named parameters and print name, shape, total size
         # tot = 0
@@ -206,14 +211,21 @@ class Transformer(nn.Module):
         super().__init__()
         self.layers = nn.ModuleList([])
         self.scale = {}
-        attention_cls = Attention if not args.ema else EmaAttention
+        attention_cls = Attention if (not args.ema or args.use_mix_ffn) else EmaAttention
         for i in range(depth):
-            self.layers.append(nn.ModuleList([
-                PreNorm(num_patches, dim,
-                        attention_cls(dim, num_patches, heads=heads, dim_head=dim_head, dropout=dropout, is_LSA=is_LSA,
-                                      args=args)),
-                PreNorm(num_patches, dim, FeedForward(dim, num_patches, dim * mlp_dim_ratio, dropout=dropout))
-            ]))
+            layers = []
+            layers.append(PreNorm(num_patches, dim,
+                                  attention_cls(dim, num_patches, heads=heads, dim_head=dim_head, dropout=dropout,
+                                                is_LSA=is_LSA,
+                                                args=args)))
+            if args.use_mix_ffn:
+                ffn = PreNorm(num_patches, dim,
+                              MixFFN(dim, hidden_features=dim * mlp_dim_ratio, drop=dropout, num_patches=num_patches,
+                                     with_cls=True, args=args))
+            else:
+                ffn = PreNorm(num_patches, dim, FeedForward(dim, num_patches, dim * mlp_dim_ratio, dropout=dropout))
+            layers.append(ffn)
+            self.layers.append(nn.ModuleList(layers))
         self.drop_path = DropPath(stochastic_depth) if stochastic_depth > 0 else nn.Identity()
 
     def forward(self, x):
@@ -248,7 +260,8 @@ class ViT(nn.Module):
 
         real_patch_amount = self.num_patches + 1
         self.pos_embedding = nn.Parameter(
-            torch.randn(1, real_patch_amount, self.dim)) if (not self.use_relative_pos_embedding and not self.no_pos_embedding) else \
+            torch.randn(1, real_patch_amount, self.dim)) if (
+                not self.use_relative_pos_embedding and not self.no_pos_embedding) else \
             torch.zeros(1, real_patch_amount, self.dim).requires_grad_(False).cuda()
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.dim))

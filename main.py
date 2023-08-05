@@ -28,7 +28,7 @@ import warnings
 warnings.filterwarnings("ignore", category=Warning)
 
 best_acc1 = 0
-MODELS = ['vit', 'swin', 'pit', 'cait', 't2t', 'mega','convit']
+MODELS = ['vit', 'swin', 'pit', 'cait', 't2t', 'mega', 'convit']
 
 
 def create_optimization_groups(model, args):
@@ -82,6 +82,7 @@ def init_parser():
     parser.add_argument('-b', '--batch_size', default=128, type=int, metavar='N', help='mini-batch size (default: 128)',
                         dest='batch_size')
     parser.add_argument('--use_mega_gating', default=False, type=bool)
+
     parser.add_argument('--lr', default=0.001, type=float, help='initial learning rate')
 
     parser.add_argument('--weight-decay', default=5e-2, type=float, help='weight decay (default: 1e-4)')
@@ -149,7 +150,7 @@ def init_parser():
     parser.add_argument('--is_SPT', action='store_true', help='Shifted Patch Tokenization')
 
     parser.add_argument('--n_ssm', type=int, default=1, help='number of internal ssms')
-    parser.add_argument('--complex_ssm',action = 'store_true', default=False, help='Use complex ssm')
+    parser.add_argument('--complex_ssm', action='store_true', default=False, help='Use complex ssm')
     parser.add_argument('--use_positional_encoding', type=bool, default=False, help='Use complex ssm')
 
     parser.add_argument('--directions_amount', type=int, default=4, help='number directions, can be 2 or 4')
@@ -165,6 +166,11 @@ def init_parser():
                         help='Perform normalization after SSM')
     parser.add_argument('--no_pos_embedding', action='store_true', default=False,
                         help='Whether to rel pos embed or abs pos embed in ViT')
+
+    parser.add_argument('--force_ssm_length', type=int, default=None,
+                        help='Use shorter than the default ssm length')
+    parser.add_argument('--use_mix_ffn', action='store_true', default=False,
+                        help='Use mix ffn')
 
     return parser
 
@@ -312,7 +318,7 @@ def main(args):
     if args.resume:
         if args.resume == 'auto':
             args.resume = os.path.join(save_path, 'checkpoint.pth')
-        checkpoint = torch.load(args.resume)#, map_location='cpu')
+        checkpoint = torch.load(args.resume)  # , map_location='cpu')
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler'])

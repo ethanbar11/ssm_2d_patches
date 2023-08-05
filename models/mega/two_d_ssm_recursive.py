@@ -61,15 +61,18 @@ class TwoDimensionalSSM(nn.Module):
             save_path=None
     ):
         super().__init__()
-        print(L)
         self.is_2_dim = True
         self.truncation = truncation
         self.embed_dim = embed_dim
         self.ndim = args.ndim
+        if args.force_ssm_length is not None:
+            self.dont = True
+            L = min(args.force_ssm_length ** 2, L)
+        else:
+            self.dont = False
         self.n_ssm = args.n_ssm
         self.normalization = nn.LayerNorm(embed_dim) if args.normalize else nn.Identity()
         self.is_complex = args.complex_ssm
-        print(args.complex_ssm)
         self.directions_amount = args.directions_amount
         self.repeat = self.embed_dim // self.n_ssm
 
@@ -157,7 +160,6 @@ class TwoDimensionalSSM(nn.Module):
                     nn.init.normal_(tensor, mean=0, std=0.2)
             nn.init.normal_(self.B_1, mean=0.0, std=0.2)
             nn.init.normal_(self.B_2, mean=0.0, std=0.2)
-            # TODO: After expanding to n_dim>1 , checkout what's being done with beta in EMA
 
             nn.init.normal_(self.C_1, mean=0.0, std=1.0)
             nn.init.normal_(self.C_2, mean=0.0, std=1.0)
@@ -219,7 +221,7 @@ class TwoDimensionalSSM(nn.Module):
             outputs[direction] = torch.sum(outputs[direction], dim=1)
         return outputs
 
-    def _compute_kernel(self, length: int):
+    def _compute_kernel(self):
         self._kernel = None
         A, B_1, B_2 = self._calc_coeffs()
         # l x l x D x N
@@ -263,14 +265,8 @@ class TwoDimensionalSSM(nn.Module):
                 self._coeffs = self._calc_coeffs()
             return self._coeffs
 
-    def kernel(self, length: int):
-        kernel_size = length if self.truncation is None else min(self.truncation, length)
-        if self.training:
-            return self._compute_kernel(kernel_size)
-        else:
-            if self._kernel is None or self._kernel.size(-1) < kernel_size:
-                self._kernel = self._compute_kernel(kernel_size)
-            return self._kernel
+    def kernel(self):
+        return self._compute_kernel()
 
     def forward(
             self,
@@ -283,7 +279,7 @@ class TwoDimensionalSSM(nn.Module):
                 keys that are pads, of shape `(batch, src_len)`, where
                 padding elements are indicated by 1s.
         """
-
+        orig = x
         seq_len, bsz, embed_dim = x.size()
 
         assert embed_dim == self.embed_dim
@@ -293,24 +289,23 @@ class TwoDimensionalSSM(nn.Module):
 
         # L x B x D -> B x D x L
         x = x.permute(1, 2, 0)
-        if padding_mask is not None:
-            x = x * (1.0 - padding_mask.unsqueeze(1).type_as(x))
 
         # D x L
         fft_len = seq_len
         fft_len = int(math.sqrt(fft_len))
-        k = self.kernel(fft_len).permute(2, 0, 1)  # H x L x L
+        k = self.kernel().permute(2, 0, 1)  # H x L x L
+        if self.dont:
+            return residual
         s = 0
         if self.save_kernel:
             for i in range(k.shape[0]):
                 # Create image path and save it
                 img_path = os.path.join(self.save_kernel, f'kernel_{i}.png')
                 plot_heatmap(k[i], f'kernel {i}', save_image=True, save_path=img_path)
-        kernel_size = k.size(1)
-        # Pad x with zeros to power 2 of self.one_side_length
-        # x = torch.nn.functional.pad(x, (self.one_side_length ** 2 - x.shape[-1],0, 0, 0, 0, 0))
-        x = x.view(bsz, embed_dim, self.one_side_length, -1)
+
+        x = x.view(bsz, embed_dim, fft_len, fft_len)
         out = None
+
         if self.directions_amount > 1:
             # Split kernels to four directions
             kernels = list(
@@ -327,12 +322,14 @@ class TwoDimensionalSSM(nn.Module):
 
             for idx, flip in enumerate(flip_dims):
                 k = kernels[idx]
+                # pad k to be the size of x
+                k = torch.nn.functional.pad(k, (0, x.shape[-1] - k.shape[-1], 0, x.shape[-2] - k.shape[-2]))
                 curr_x = torch.flip(x, dims=flip)
 
                 k_f = torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len))
                 x_f = torch.fft.rfft2(curr_x.float(), s=(2 * fft_len, 2 * fft_len))
-                curr = torch.fft.irfft2(x_f * k_f, s=(2 * fft_len, 2 * fft_len))[..., s:self.one_side_length + s,
-                       s:self.one_side_length + s]
+                curr = torch.fft.irfft2(x_f * k_f, s=(2 * fft_len, 2 * fft_len))[..., s:fft_len + s,
+                       s:fft_len + s]
                 curr_after_flip = torch.flip(curr, dims=flip)
                 if out is None:
                     out = curr_after_flip

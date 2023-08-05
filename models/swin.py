@@ -21,6 +21,7 @@ from .mega.mega_layer import MegaLayer
 from .mega.exponential_moving_average import MultiHeadEMA
 from .mega.two_d_ssm_recursive import TwoDimensionalSSM
 from src.models.sequence.modules.s4nd import S4ND
+from .mix_ffn import MixFFN
 
 
 def drop_path(x, dim, drop_prob: float = 0., training: bool = False, scale_by_keep: bool = True):
@@ -234,7 +235,7 @@ class SwinTransformerBlock(nn.Module):
 
     def __init__(self, dim, input_resolution, num_heads, window_size=7, shift_size=0,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
-                 act_layer=nn.GELU, norm_layer=nn.LayerNorm, is_LSA=False, args=None,save_path=None):
+                 act_layer=nn.GELU, norm_layer=nn.LayerNorm, is_LSA=False, args=None, save_path=None):
         super().__init__()
         self.dim = dim
         self.external_bias = True
@@ -301,7 +302,11 @@ class SwinTransformerBlock(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
+        if args.use_mix_ffn:
+            self.mlp = MixFFN(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop,
+                              num_patches=self.input_resolution[0] ** 2, args=args)
+        else:
+            self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
         if self.shift_size > 0:
             # calculate attention mask for SW-MSA
@@ -329,9 +334,9 @@ class SwinTransformerBlock(nn.Module):
 
         self.register_buffer("attn_mask", attn_mask)  # No parameter
 
-        if args.ema == 'ssm_2d':
+        if args.ema == 'ssm_2d' and not args.use_mix_ffn:
             self.move = TwoDimensionalSSM(embed_dim=dim, ndim=args.ndim, truncation=None,
-                                          L=self.input_resolution[0] ** 2, args=args,save_path=save_path)
+                                          L=self.input_resolution[0] ** 2, args=args, save_path=save_path)
 
         elif args.ema == 's4nd':
             config_path = args.s4nd_config
@@ -340,7 +345,8 @@ class SwinTransformerBlock(nn.Module):
             config = yaml.load(open(config_path, 'r'), Loader=yaml.FullLoader)
             config['n_ssm'] = args.n_ssm
             config['d_state'] = args.ndim
-            self.move = S4ND(**config, d_model=self.dim, l_max=int(math.sqrt(self.input_resolution[0] ** 2)), return_state=False)
+            self.move = S4ND(**config, d_model=self.dim, l_max=int(math.sqrt(self.input_resolution[0] ** 2)),
+                             return_state=False)
             print('S4ND', self.move)
         elif args.ema == 'ema':
             self.move = MultiHeadEMA(embed_dim=dim, ndim=args.ndim, bidirectional=True, truncation=None)
@@ -350,11 +356,11 @@ class SwinTransformerBlock(nn.Module):
 
         # Print the total amount of params
         tot = 0
-        for name,w in dict(self.move.named_parameters()).items():
+        for name, w in dict(self.move.named_parameters()).items():
             print(name, w.shape, w.numel())
             tot += w.numel()
-        print('Total params in:',args.ema, tot)
-        exit()
+        print('Total params in:', args.ema, tot)
+
     def forward(self, x):
         # H, W = self.input_resolution
         B, L, C = x.shape
@@ -514,7 +520,8 @@ class BasicLayer(nn.Module):
                                  qkv_bias=qkv_bias, qk_scale=qk_scale,
                                  drop=drop, attn_drop=attn_drop,
                                  drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
-                                 norm_layer=norm_layer, is_LSA=is_LSA, args=args)#, save_path=args.save_path.format(i))
+                                 norm_layer=norm_layer, is_LSA=is_LSA, args=args)
+            # , save_path=args.save_path.format(i))
             for i in range(depth)])
 
         # patch merging layer
@@ -623,9 +630,9 @@ class SwinTransformer(nn.Module):
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
         self.mlp_ratio = mlp_ratio
         if args.save_directory is not None:
-            self.save_and_exit=True
+            self.save_and_exit = True
         else:
-            self.save_and_exit=False
+            self.save_and_exit = False
 
         """ Base """
         if not is_SPT:
