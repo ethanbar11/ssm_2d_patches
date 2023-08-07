@@ -276,13 +276,10 @@ class ViT(nn.Module):
         )
 
         self.apply(init_weights)
-        self.tot_times =[]
-        self.idx = 0
 
     def forward(self, img):
         # patch embedding
         # B x C x H x W -> B x N x D
-        start=timeit.default_timer()
         x = self.to_patch_embedding(img)
 
         b, n, _ = x.shape
@@ -293,10 +290,4 @@ class ViT(nn.Module):
 
         x = self.transformer(x)
         out = self.mlp_head(x[:, 0])
-        end = timeit.default_timer()
-        self.tot_times.append(end-start)
-        self.idx += 1
-        if self.idx== 100:
-            print('Average time: ', sum(self.tot_times) / len(self.tot_times))
-            exit()
         return out

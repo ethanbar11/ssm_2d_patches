@@ -371,10 +371,9 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
     model.train()
     loss_val, acc1_val = 0, 0
     n = 0
-    start_time = timeit.default_timer()
+    times =[]
     for i, (images, target) in enumerate(train_loader):
-        if i == 200:
-            break
+        start = timeit.default_timer()
         if (not args.no_cuda) and torch.cuda.is_available():
             images = images.cuda(args.gpu, non_blocking=True)
             target = target.cuda(args.gpu, non_blocking=True)
@@ -462,9 +461,11 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
             avg_loss, avg_acc1 = (loss_val / n), (acc1_val / n)
             progress_bar(i, len(train_loader),
                          f'[Epoch {epoch + 1}/{args.epochs}][T][{i}]   Loss: {avg_loss:.4e}   Top-1: {avg_acc1:6.2f}   LR: {lr:.7f}' + ' ' * 10)
-    end_time  = timeit.default_timer()
-    print(f"Training time: {end_time - start_time}")
-    exit()
+        end_time = timeit.default_timer()
+        times.append(end_time - start)
+        if i == 50:
+            print(f"Average time per batch: {np.mean(times)}")
+            exit()
     logger_dict.update(keys[0], avg_loss)
     logger_dict.update(keys[1], avg_acc1)
     if args.wandb:
