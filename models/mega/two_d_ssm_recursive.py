@@ -72,6 +72,8 @@ class TwoDimensionalSSM(nn.Module):
             L = min(args.force_ssm_length ** 2, L)
         else:
             self.dont = False
+        self.dont = True
+
         self.n_ssm = args.n_ssm
         self.normalization = nn.LayerNorm(embed_dim) if args.normalize else nn.Identity()
         self.is_complex = args.complex_ssm
@@ -252,7 +254,7 @@ class TwoDimensionalSSM(nn.Module):
                 keys that are pads, of shape `(batch, src_len)`, where
                 padding elements are indicated by 1s.
         """
-        orig = x
+        tot_time_start = timeit.default_timer()
         seq_len, bsz, embed_dim = x.size()
 
         assert embed_dim == self.embed_dim
@@ -267,8 +269,6 @@ class TwoDimensionalSSM(nn.Module):
         fft_len = seq_len
         fft_len = int(math.sqrt(fft_len))
         k = self.kernel().permute(2, 0, 1)  # H x L x L
-        if self.dont:
-            return residual
         s = 0
         if self.save_kernel:
             for i in range(k.shape[0]):
@@ -278,7 +278,6 @@ class TwoDimensionalSSM(nn.Module):
 
         x = x.view(bsz, embed_dim, fft_len, fft_len)
         out = None
-
         if self.directions_amount > 1:
             # Split kernels to four directions
             kernels = list(
@@ -292,22 +291,25 @@ class TwoDimensionalSSM(nn.Module):
                 flip_dims = [[], [-2], [-1], [-2, -1]]
             else:
                 flip_dims = [[], [-2, -1]]
-
+            fft_times = []
             for idx, flip in enumerate(flip_dims):
                 k = kernels[idx]
                 # pad k to be the size of x
                 # k = torch.nn.functional.pad(k, (0, x.shape[-1] - k.shape[-1], 0, x.shape[-2] - k.shape[-2]))
                 curr_x = torch.flip(x, dims=flip)
-
+                fft_start=timeit.default_timer()
                 k_f = torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len))
                 x_f = torch.fft.rfft2(curr_x.float(), s=(2 * fft_len, 2 * fft_len))
                 curr = torch.fft.irfft2(x_f * k_f, s=(2 * fft_len, 2 * fft_len))[..., s:fft_len + s,
                        s:fft_len + s]
+                fft_end=timeit.default_timer()
+                fft_times.append(fft_end-fft_start)
                 curr_after_flip = torch.flip(curr, dims=flip)
                 if out is None:
                     out = curr_after_flip
                 else:
                     out += curr_after_flip
+            fft_tot_time = sum(fft_times)
         else:
             k_f = torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len))
             x_f = torch.fft.rfft2(x.float(), s=(2 * fft_len, 2 * fft_len))
@@ -317,5 +319,7 @@ class TwoDimensionalSSM(nn.Module):
         out = rearrange(out, 'b d l1 l2 -> b d (l1 l2)')
         # B x D x L -> L x B x D
         out = out.permute(2, 0, 1) + residual
+        tot_end = timeit.default_timer()
+        print('The portion of fft is: ', fft_tot_time / (tot_end - tot_time_start))
         # out = F.silu(out.permute(2, 0, 1) + residual)
         return self.normalization(out)

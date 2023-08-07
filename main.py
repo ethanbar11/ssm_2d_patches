@@ -326,6 +326,7 @@ def main(args):
         args.epochs = final_epoch - (checkpoint['epoch'] + 1)
 
     for epoch in tqdm(range(args.epochs)):
+
         lr = train(train_loader, model, criterion, optimizer, epoch, scheduler, args)
         acc1 = validate(val_loader, model, criterion, lr, args, epoch=epoch)
         torch.save({
@@ -363,12 +364,12 @@ def main(args):
     print('*' * 80 + Style.RESET_ALL)
     torch.save(model.state_dict(), os.path.join(save_path, 'checkpoint.pth'))
 
+from torch.profiler import profile, record_function, ProfilerActivity
 
 def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
     model.train()
     loss_val, acc1_val = 0, 0
     n = 0
-
     for i, (images, target) in enumerate(train_loader):
         if (not args.no_cuda) and torch.cuda.is_available():
             images = images.cuda(args.gpu, non_blocking=True)
@@ -457,7 +458,6 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
             avg_loss, avg_acc1 = (loss_val / n), (acc1_val / n)
             progress_bar(i, len(train_loader),
                          f'[Epoch {epoch + 1}/{args.epochs}][T][{i}]   Loss: {avg_loss:.4e}   Top-1: {avg_acc1:6.2f}   LR: {lr:.7f}' + ' ' * 10)
-
     logger_dict.update(keys[0], avg_loss)
     logger_dict.update(keys[1], avg_acc1)
     if args.wandb:
