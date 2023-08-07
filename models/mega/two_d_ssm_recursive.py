@@ -270,6 +270,7 @@ class TwoDimensionalSSM(nn.Module):
         fft_len = seq_len
         fft_len = int(math.sqrt(fft_len))
         k = self.kernel().permute(2, 0, 1)  # H x L x L
+
         s = 0
         if self.save_kernel:
             for i in range(k.shape[0]):
