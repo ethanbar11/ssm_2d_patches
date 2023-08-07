@@ -129,6 +129,8 @@ class TwoDimensionalSSM(nn.Module):
             self.C_2 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim))
         # sized D because this is a residual connection (element-wise)
         self.omega = nn.Parameter(torch.Tensor(embed_dim))
+        self.times = []
+        self.i = 0
 
         self.horizontal_flow = None
         self.vertical_flow = None
@@ -322,7 +324,7 @@ class TwoDimensionalSSM(nn.Module):
                 flip_dims = [[], [-2], [-1], [-2, -1]]
             else:
                 flip_dims = [[], [-2, -1]]
-            fft_times =[]
+            fft_times = []
             for idx, flip in enumerate(flip_dims):
                 k = kernels[idx]
                 # pad k to be the size of x
@@ -334,7 +336,7 @@ class TwoDimensionalSSM(nn.Module):
                 curr = torch.fft.irfft2(x_f * k_f, s=(2 * fft_len, 2 * fft_len))[..., s:fft_len + s,
                        s:fft_len + s]
                 fft_end_time = timeit.default_timer()
-                fft_times.append(fft_end_time-fft_start_time)
+                fft_times.append(fft_end_time - fft_start_time)
                 curr_after_flip = torch.flip(curr, dims=flip)
                 if out is None:
                     out = curr_after_flip
@@ -352,7 +354,11 @@ class TwoDimensionalSSM(nn.Module):
         out = out.permute(2, 0, 1) + residual
         # out = F.silu(out.permute(2, 0, 1) + residual)
         end_total = timeit.default_timer() - start_time
+        self.times.append(end_total)
+        self.i += 1
+        if self.i % 200 == 0:
+            print('Average time inside two_d_ssm is:', sum(self.times) / len(self.times))
         # print('FFT portion of the time: ', fft_total_time / end_total)
         # print('Kernel portion of the time: ', kernel_time / end_total)
-        print('Total time:',end_total)
+        # print('Total time:',end_total)
         return self.normalization(out)
