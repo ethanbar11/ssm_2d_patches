@@ -371,13 +371,19 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
     model.train()
     loss_val, acc1_val = 0, 0
     n = 0
-    times =[]
+    times = []
+    move_image_and_target_to_cuda_times = []
+    aug_times = []
+    model_times =[]
+    loss_times = []
+    shit_at_the_end_times = []
     for i, (images, target) in enumerate(train_loader):
         start = timeit.default_timer()
         if (not args.no_cuda) and torch.cuda.is_available():
             images = images.cuda(args.gpu, non_blocking=True)
             target = target.cuda(args.gpu, non_blocking=True)
-
+        cuda_times_stop = timeit.default_timer()
+        move_image_and_target_to_cuda_times.append(cuda_times_stop - start)
         # Cutmix only
         if args.cm and not args.mu:
             r = np.random.rand(1)
@@ -420,31 +426,52 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
 
                 # Cutmix
                 if switching_prob < 0.5:
+                    cut_mix_start = timeit.default_timer()
                     slicing_idx, y_a, y_b, lam, sliced = cutmix_data(images, target, args)
                     images[:, :, slicing_idx[0]:slicing_idx[2], slicing_idx[1]:slicing_idx[3]] = sliced
+                    cut_mix_stop = timeit.default_timer()
+                    aug_times.append(cut_mix_stop - cut_mix_start)
+                    model_start = timeit.default_timer()
                     output = model(images)
-
+                    model_stop = timeit.default_timer()
+                    model_times.append(model_stop - model_start)
+                    loss_start = timeit.default_timer()
                     loss = mixup_criterion(criterion, output, y_a, y_b, lam)
+                    loss_stop = timeit.default_timer()
+                    loss_times.append(loss_stop - loss_start)
 
 
                 # Mixup
                 else:
+                    mixup_start = timeit.default_timer()
                     images, y_a, y_b, lam = mixup_data(images, target, args)
+                    mixup_stop = timeit.default_timer()
+                    aug_times.append(mixup_stop - mixup_start)
+                    model_start = timeit.default_timer()
                     output = model(images)
-
+                    model_stop = timeit.default_timer()
+                    model_times.append(model_stop - model_start)
+                    loss_start = timeit.default_timer()
                     loss = mixup_criterion(criterion, output, y_a, y_b, lam)
+                    loss_stop = timeit.default_timer()
+                    loss_times.append(loss_stop - loss_start)
 
             else:
+                model_start = timeit.default_timer()
                 output = model(images)
-
+                model_stop = timeit.default_timer()
+                model_times.append(model_stop - model_start)
+                loss_start = timeit.default_timer()
                 loss = criterion(output, target)
+                loss_stop = timeit.default_timer()
+                loss_times.append(loss_stop - loss_start)
 
                 # No Mix
         else:
             output = model(images)
 
             loss = criterion(output, target)
-
+        shit_at_the_end_start = timeit.default_timer()
         acc = accuracy(output, target, (1,))
         acc1 = acc[0]
         n += images.size(0)
@@ -462,9 +489,16 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
             progress_bar(i, len(train_loader),
                          f'[Epoch {epoch + 1}/{args.epochs}][T][{i}]   Loss: {avg_loss:.4e}   Top-1: {avg_acc1:6.2f}   LR: {lr:.7f}' + ' ' * 10)
         end_time = timeit.default_timer()
+        shit_at_the_end_times.append(end_time - shit_at_the_end_start)
         times.append(end_time - start)
         if i == 50:
+            print(f"Average time per aug: ,{np.mean(aug_times)}")
+            print(f"Average time per model: ,{np.mean(model_times)}")
+            print(f"Average time per loss: ,{np.mean(loss_times)}")
+            print(f"Average time per shit at the end: ,{np.mean(shit_at_the_end_times)}")
             print(f"Average time per batch: {np.mean(times)}")
+
+
             exit()
     logger_dict.update(keys[0], avg_loss)
     logger_dict.update(keys[1], avg_acc1)
