@@ -377,6 +377,7 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
     model_times =[]
     loss_times = []
     shit_at_the_end_times = []
+    only_backwards = []
     for i, (images, target) in enumerate(train_loader):
         start = timeit.default_timer()
         if (not args.no_cuda) and torch.cuda.is_available():
@@ -479,7 +480,10 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
         acc1_val += float(acc1[0] * images.size(0))
 
         optimizer.zero_grad()
+        only_loss_backward_start = timeit.default_timer()
         loss.backward()
+        only_loss_backward_end = timeit.default_timer()
+        only_backwards.append(only_loss_backward_end - only_loss_backward_start)
         optimizer.step()
         scheduler.step()
         lr = optimizer.param_groups[0]["lr"]
@@ -496,6 +500,7 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
             print(f"Average time per model: ,{np.mean(model_times)}")
             print(f"Average time per loss: ,{np.mean(loss_times)}")
             print(f"Average time per shit at the end: ,{np.mean(shit_at_the_end_times)}")
+            print(f"Average time per loss backwards: ,{np.mean(only_backwards)}")
             print(f"Average time per batch: {np.mean(times)}")
 
 
