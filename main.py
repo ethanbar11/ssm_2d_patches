@@ -204,7 +204,6 @@ def main(args):
         wandb.log({'n_parameters': n_parameters}, commit=False)
     print(f'Number of params: {format(n_parameters, ",")}')
     print(Fore.GREEN + '*' * 80)
-    # exit()
     logger.debug(f"Creating model: {model_name}")
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.debug(f'Number of params: {format(n_parameters, ",")}')
