@@ -374,7 +374,7 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
     n = 0
     start_time = timeit.default_timer()
     for i, (images, target) in enumerate(train_loader):
-        if i == 200:
+        if i == 50:
             break
         if (not args.no_cuda) and torch.cuda.is_available():
             images = images.cuda(args.gpu, non_blocking=True)

@@ -72,7 +72,6 @@ class TwoDimensionalSSM(nn.Module):
             L = min(args.force_ssm_length ** 2, L)
         else:
             self.dont = False
-        self.dont = True
 
         self.n_ssm = args.n_ssm
         self.normalization = nn.LayerNorm(embed_dim) if args.normalize else nn.Identity()
@@ -326,7 +325,7 @@ class TwoDimensionalSSM(nn.Module):
         # print('Total time is: ', tot_end - tot_time_start)
         self.tot_time += tot_end - tot_time_start
         self.i+=1
-        if self.i%100==0:
+        if self.i%200==0:
             print('The average time is: ', self.tot_time/self.i)
         # out = F.silu(out.permute(2, 0, 1) + residual)
         return self.normalization(out)

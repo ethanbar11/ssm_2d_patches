@@ -1,3 +1,4 @@
+import timeit
 import math
 import torch
 from torch import nn, einsum
@@ -227,12 +228,25 @@ class Transformer(nn.Module):
             layers.append(ffn)
             self.layers.append(nn.ModuleList(layers))
         self.drop_path = DropPath(stochastic_depth) if stochastic_depth > 0 else nn.Identity()
+        self.ffn_times = []
+        self.attn_times = []
+        self.idx = 0
 
     def forward(self, x):
         for i, (attn, ff) in enumerate(self.layers):
+            start_attn = timeit.default_timer()
             x = self.drop_path(attn(x)) + x
+            self.attn_times.append(timeit.default_timer() - start_attn)
+            start_ff = timeit.default_timer()
             x = self.drop_path(ff(x)) + x
+            self.ffn_times.append(timeit.default_timer() - start_ff)
             self.scale[str(i)] = attn.fn.scale
+        self.idx+=1
+        if self.idx ==50:
+            import numpy as np
+            print('attn time:', np.mean(self.attn_times))
+            print('ffn time:', np.mean(self.ffn_times))
+            exit()
         return x
 
 
