@@ -143,6 +143,8 @@ class TwoDimensionalSSM(nn.Module):
         self.reset_parameters()
 
         self.onnx_trace = False
+        self.tot_time = 0
+        self.i = 0
         self.tpu = False
 
     def prepare_for_onnx_export_(self):
@@ -197,7 +199,7 @@ class TwoDimensionalSSM(nn.Module):
         # l x l  D x N
         A_values = torch.stack(list(A.values()), dim=0)
         A_values = rearrange(torch.linalg.vander(A_values, N=power_dim),
-                                  'a n_ssm N L -> a L n_ssm N')
+                             'a n_ssm N L -> a L n_ssm N')
         B = torch.nn.functional.pad(torch.stack([B1, B2], dim=0),
                                     (0, 0, 0, 0, 0, A_values.shape[1] - 2)).unsqueeze(0)
         values = torch.cat([A_values, B], dim=0)
@@ -297,13 +299,13 @@ class TwoDimensionalSSM(nn.Module):
                 # pad k to be the size of x
                 # k = torch.nn.functional.pad(k, (0, x.shape[-1] - k.shape[-1], 0, x.shape[-2] - k.shape[-2]))
                 curr_x = torch.flip(x, dims=flip)
-                fft_start=timeit.default_timer()
+                fft_start = timeit.default_timer()
                 k_f = torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len))
                 x_f = torch.fft.rfft2(curr_x.float(), s=(2 * fft_len, 2 * fft_len))
                 curr = torch.fft.irfft2(x_f * k_f, s=(2 * fft_len, 2 * fft_len))[..., s:fft_len + s,
                        s:fft_len + s]
-                fft_end=timeit.default_timer()
-                fft_times.append(fft_end-fft_start)
+                fft_end = timeit.default_timer()
+                fft_times.append(fft_end - fft_start)
                 curr_after_flip = torch.flip(curr, dims=flip)
                 if out is None:
                     out = curr_after_flip
@@ -320,6 +322,11 @@ class TwoDimensionalSSM(nn.Module):
         # B x D x L -> L x B x D
         out = out.permute(2, 0, 1) + residual
         tot_end = timeit.default_timer()
-        print('The portion of fft is: ', fft_tot_time / (tot_end - tot_time_start))
+        # print('The portion of fft is: ', fft_tot_time / (tot_end - tot_time_start))
+        # print('Total time is: ', tot_end - tot_time_start)
+        self.tot_time += tot_end - tot_time_start
+        self.i+=1
+        if self.i%100==0:
+            print('The average time is: ', self.tot_time/self.i)
         # out = F.silu(out.permute(2, 0, 1) + residual)
         return self.normalization(out)
