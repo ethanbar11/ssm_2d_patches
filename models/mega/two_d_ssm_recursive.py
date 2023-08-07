@@ -352,6 +352,7 @@ class TwoDimensionalSSM(nn.Module):
         out = out.permute(2, 0, 1) + residual
         # out = F.silu(out.permute(2, 0, 1) + residual)
         end_total = timeit.default_timer() - start_time
-        print('FFT portion of the time: ', fft_total_time / end_total)
-        print('Kernel portion of the time: ', kernel_time / end_total)
+        # print('FFT portion of the time: ', fft_total_time / end_total)
+        # print('Kernel portion of the time: ', kernel_time / end_total)
+        print('Total time:',end_total)
         return self.normalization(out)
