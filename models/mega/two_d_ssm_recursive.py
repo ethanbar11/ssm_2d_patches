@@ -1,12 +1,14 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 import os
+import timeit
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
 
 import math
+import numpy as np
 from typing import Optional
 from einops import rearrange, einsum, repeat
 import torch
@@ -76,7 +78,6 @@ class TwoDimensionalSSM(nn.Module):
         self.directions_amount = args.directions_amount
         self.repeat = self.embed_dim // self.n_ssm
 
-        # TODO: Add support in ndim>1 bidirectionality, and truncation
         self.scale = math.sqrt(1.0 / self.ndim)
         self.kernel_dim = args.directions_amount * self.n_ssm
 
@@ -85,6 +86,7 @@ class TwoDimensionalSSM(nn.Module):
         self.coeff_calc = CoeffCalculator(self.one_side_length)
         self.coeff_calc.calc_coeffs_lazy(force=force_coeff_calc)
         self.matrices = self.coeff_calc.matrices
+        self.one_matrix = self.coeff_calc.whole_as_one
         for key, inner_dic in self.matrices.items():
             for symbol, matrix in inner_dic.items():
                 if self.is_complex:
@@ -191,39 +193,22 @@ class TwoDimensionalSSM(nn.Module):
         A, B1, B2 = self._calc_coeffs()
         power_dim = kernel_dim * 2
         # l x l  D x N
-        A_powers = {}
-        for symbol, tensor in A.items():
-            A_powers[symbol] = torch.exp(
-                einsum(torch.arange(power_dim).to(tensor.device),
-                       torch.log(tensor),
-                       'l , h n-> l h n'))
-        B = torch.stack([B1, B2], dim=0)
-        outputs = {}
-        for direction in self.matrices.keys():
-            # Should be sized R x H x N
-            outputs[direction] = None
-        for direction, matrices in self.matrices.items():
-            output = outputs[direction]
-            for symbol, matrix in matrices.items():
-                vec = B if symbol == 'B' else A_powers[symbol]
-                current_calculation = einsum(matrix, vec, 'R V, V h n -> R h n')
-
-                if output is None:
-                    output = current_calculation
-                else:
-                    output = output * current_calculation
-            outputs[direction] = output
-        for direction, matrix in outputs.items():
-            outputs[direction] = rearrange(matrix, '(r1 r2) h n-> r1 r2 h n',
-                                           r1=self.one_side_length ** 2,
-                                           r2=self.coeff_calc.coeff_rows_amount // (self.one_side_length ** 2))
-            # Sum over the second dimension
-            outputs[direction] = torch.sum(outputs[direction], dim=1)
-        return outputs
+        A_values = torch.stack(list(A.values()), dim=0)
+        A_values = rearrange(torch.linalg.vander(A_values, N=power_dim),
+                                  'a n_ssm N L -> a L n_ssm N')
+        B = torch.nn.functional.pad(torch.stack([B1, B2], dim=0),
+                                    (0, 0, 0, 0, 0, A_values.shape[1] - 2)).unsqueeze(0)
+        values = torch.cat([A_values, B], dim=0)
+        whole_output = einsum(self.one_matrix, values, 'd a R V, a V h n -> d a R h n')
+        whole_output = einsum(whole_output[:, 0], whole_output[:, 1], whole_output[:, 2], whole_output[:, 3],
+                              whole_output[:, 4],
+                              'd R h n, d R h n, d R h n, d R h n, d R h n -> d R h n')
+        whole_output = rearrange(whole_output, 'd (r1 r2) h n -> d r1 r2 h n', r1=self.one_side_length ** 2)
+        whole_output = einsum(whole_output, 'd r1 r2 h n -> d r1 h n')
+        return whole_output
 
     def _compute_kernel(self):
         self._kernel = None
-        A, B_1, B_2 = self._calc_coeffs()
         # l x l x D x N
         outputs = self.compute_x_matrix(self.one_side_length)
         # L x L x D x N
@@ -235,12 +220,8 @@ class TwoDimensionalSSM(nn.Module):
         else:
             C_1 = self.C_1
             C_2 = self.C_2
-        # C_1 = torch.softmax(C_1, dim=1)
-        # C_2 = torch.softmax(C_2, dim=1)
-        output_horizontal = einsum(outputs['horizontal'], C_1 * self.scale, "l H N ,H N->l H")
-        output_vertical = einsum(outputs['vertical'], C_2 * self.scale, "l H N ,H N->l H")
-        # L x L x H
-        output = output_horizontal + output_vertical
+        C = torch.stack([C_1, C_2], dim=0) * self.scale
+        output = einsum(outputs, C, 'direction patches n_ssm N, directions  n_ssm N -> patches n_ssm')
 
         output = output.view(self.one_side_length, self.one_side_length, self.kernel_dim)
         output[0, :, :, ] *= 2
@@ -256,14 +237,6 @@ class TwoDimensionalSSM(nn.Module):
     def compute_sympy_kernel(self):
         A, B1, B2 = self._calc_coeffs()
         return self.coeff_calc.compute_sympy_kernel(A, B1, B2, self.C_1, self.C_2)
-
-    def coeffs(self):
-        if self.training:
-            return self._calc_coeffs()
-        else:
-            if self._coeffs is None:
-                self._coeffs = self._calc_coeffs()
-            return self._coeffs
 
     def kernel(self):
         return self._compute_kernel()
@@ -323,7 +296,7 @@ class TwoDimensionalSSM(nn.Module):
             for idx, flip in enumerate(flip_dims):
                 k = kernels[idx]
                 # pad k to be the size of x
-                k = torch.nn.functional.pad(k, (0, x.shape[-1] - k.shape[-1], 0, x.shape[-2] - k.shape[-2]))
+                # k = torch.nn.functional.pad(k, (0, x.shape[-1] - k.shape[-1], 0, x.shape[-2] - k.shape[-2]))
                 curr_x = torch.flip(x, dims=flip)
 
                 k_f = torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len))
