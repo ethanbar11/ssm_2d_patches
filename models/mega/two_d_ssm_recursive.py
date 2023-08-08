@@ -3,6 +3,7 @@
 import os
 import timeit
 
+import argparse as argparse
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -325,8 +326,8 @@ class TwoDimensionalSSM(nn.Module):
         # print('The portion of fft is: ', fft_tot_time / (tot_end - tot_time_start))
         # print('Total time is: ', tot_end - tot_time_start)
         self.tot_time += tot_end - tot_time_start
-        self.i+=1
-        if self.i%200==0:
-            print('The average time is: ', self.tot_time/self.i)
+        # self.i+=1
+        # if self.i%200==0:
+        #     print('The average time is: ', self.tot_time/self.i)
         # out = F.silu(out.permute(2, 0, 1) + residual)
         return self.normalization(out)
