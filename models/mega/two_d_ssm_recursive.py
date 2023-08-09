@@ -356,8 +356,8 @@ class TwoDimensionalSSM(nn.Module):
         end_total = timeit.default_timer() - start_time
         self.times.append(end_total)
         self.i += 1
-        if self.i % 200 == 0:
-            print('Average time inside two_d_ssm is:', sum(self.times) / len(self.times))
+        # if self.i % 200 == 0:
+        #     print('Average time inside two_d_ssm is:', sum(self.times) / len(self.times))
         # print('FFT portion of the time: ', fft_total_time / end_total)
         # print('Kernel portion of the time: ', kernel_time / end_total)
         # print('Total time:',end_total)

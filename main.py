@@ -327,9 +327,18 @@ def main(args):
         final_epoch = args.epochs
         args.epochs = final_epoch - (checkpoint['epoch'] + 1)
 
+    times = []
     for epoch in tqdm(range(args.epochs)):
 
+        start = timeit.default_timer()
         lr = train(train_loader, model, criterion, optimizer, epoch, scheduler, args)
+        end = timeit.default_timer()
+        times.append(end - start)
+        if epoch == 4:
+            print(f'Epoch time: {np.mean(times[1:]):.2f}s, batch_size {args.batch_size}, lr {lr:.6f}')
+            if args.ema == 'ssm_2d':
+                print(f'Using ssm with n_ssm = {args.n_ssm } n = {args.ndim}')
+            exit()
         acc1 = validate(val_loader, model, criterion, lr, args, epoch=epoch)
         torch.save({
             'model_state_dict': model.state_dict(),
@@ -495,16 +504,16 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
         end_time = timeit.default_timer()
         shit_at_the_end_times.append(end_time - shit_at_the_end_start)
         times.append(end_time - start)
-        if i == 50:
-            print(f"Average time per aug: ,{np.mean(aug_times)}")
-            print(f"Average time per model: ,{np.mean(model_times)}")
-            print(f"Average time per loss: ,{np.mean(loss_times)}")
-            print(f"Average time per shit at the end: ,{np.mean(shit_at_the_end_times)}")
-            print(f"Average time per loss backwards: ,{np.mean(only_backwards)}")
-            print(f"Average time per batch: {np.mean(times)}")
+        # if i == 50:
+        #     print(f"Average time per aug: ,{np.mean(aug_times)}")
+        #     print(f"Average time per model: ,{np.mean(model_times)}")
+        #     print(f"Average time per loss: ,{np.mean(loss_times)}")
+        #     print(f"Average time per shit at the end: ,{np.mean(shit_at_the_end_times)}")
+        #     print(f"Average time per loss backwards: ,{np.mean(only_backwards)}")
+        #     print(f"Average time per batch: {np.mean(times)}")
 
 
-            exit()
+            # exit()
     logger_dict.update(keys[0], avg_loss)
     logger_dict.update(keys[1], avg_acc1)
     if args.wandb:
