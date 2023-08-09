@@ -3,20 +3,18 @@
 import os
 import timeit
 
-import argparse as argparse
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
 
 import math
-import numpy as np
 from typing import Optional
 from einops import rearrange, einsum, repeat
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from models.mega.ssm_coefficient import CoeffCalculator
+from models.mega.ssm_coefficient_old import CoeffCalculator
 
 _c2r = torch.view_as_real
 _r2c = torch.view_as_complex
@@ -51,7 +49,7 @@ def plot_histogram(k):
     plt.show()
 
 
-class TwoDimensionalSSM(nn.Module):
+class TwoDimensionalSSMOld(nn.Module):
     def __init__(
             self,
             embed_dim,
@@ -73,13 +71,13 @@ class TwoDimensionalSSM(nn.Module):
             L = min(args.force_ssm_length ** 2, L)
         else:
             self.dont = False
-
         self.n_ssm = args.n_ssm
         self.normalization = nn.LayerNorm(embed_dim) if args.normalize else nn.Identity()
         self.is_complex = args.complex_ssm
         self.directions_amount = args.directions_amount
         self.repeat = self.embed_dim // self.n_ssm
 
+        # TODO: Add support in ndim>1 bidirectionality, and truncation
         self.scale = math.sqrt(1.0 / self.ndim)
         self.kernel_dim = args.directions_amount * self.n_ssm
 
@@ -88,7 +86,6 @@ class TwoDimensionalSSM(nn.Module):
         self.coeff_calc = CoeffCalculator(self.one_side_length)
         self.coeff_calc.calc_coeffs_lazy(force=force_coeff_calc)
         self.matrices = self.coeff_calc.matrices
-        self.one_matrix = self.coeff_calc.whole_as_one
         for key, inner_dic in self.matrices.items():
             for symbol, matrix in inner_dic.items():
                 if self.is_complex:
@@ -132,6 +129,8 @@ class TwoDimensionalSSM(nn.Module):
             self.C_2 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim))
         # sized D because this is a residual connection (element-wise)
         self.omega = nn.Parameter(torch.Tensor(embed_dim))
+        self.times = []
+        self.i = 0
 
         self.horizontal_flow = None
         self.vertical_flow = None
@@ -143,8 +142,6 @@ class TwoDimensionalSSM(nn.Module):
         self.reset_parameters()
 
         self.onnx_trace = False
-        self.tot_time = 0
-        self.i = 0
         self.tpu = False
 
     def prepare_for_onnx_export_(self):
@@ -197,25 +194,39 @@ class TwoDimensionalSSM(nn.Module):
         A, B1, B2 = self._calc_coeffs()
         power_dim = kernel_dim * 2
         # l x l  D x N
-        A_values = torch.stack(list(A.values()), dim=0)
-        # copy A_values power dim times
-        # A_values = repeat(A_values, 'a n_ssm N-> a P n_ssm N', P=power_dim)
-        A_values = rearrange(torch.linalg.vander(A_values, N=power_dim),
-                             'a n_ssm N L -> a L n_ssm N')
-        B = torch.nn.functional.pad(torch.stack([B1, B2], dim=0),
-                                    (0, 0, 0, 0, 0, A_values.shape[1] - 2)).unsqueeze(0)
-        values = torch.cat([A_values, B], dim=0)
-        whole_output = einsum(self.one_matrix, values, 'd a R V, a V n_ssm N-> d a R n_ssm N')
-        whole_output = einsum(whole_output[:, 0], whole_output[:, 1], whole_output[:, 2], whole_output[:, 3],
-                              whole_output[:, 4],
-                              'd R n_ssm N, d R n_ssm N, d R n_ssm N, d R n_ssm N, d R n_ssm N-> d R n_ssm N')
-        whole_output = rearrange(whole_output, 'd (r1 r2) n_ssm N-> d r1 r2 n_ssm N', r1=self.one_side_length ** 2)
-        whole_output = einsum(whole_output, 'd r1 r2 n_ssm N-> d r1 n_ssm N')
-        whole_output = repeat(A_values, '(a b) L n_ssm N -> a (b 2 L) n_ssm N', b=2)
-        return whole_output
+        A_powers = {}
+        for symbol, tensor in A.items():
+            A_powers[symbol] = torch.exp(
+                einsum(torch.arange(power_dim).to(tensor.device),
+                       torch.log(tensor),
+                       'l , h n-> l h n'))
+        B = torch.stack([B1, B2], dim=0)
+        outputs = {}
+        for direction in self.matrices.keys():
+            # Should be sized R x H x N
+            outputs[direction] = None
+        for direction, matrices in self.matrices.items():
+            output = outputs[direction]
+            for symbol, matrix in matrices.items():
+                vec = B if symbol == 'B' else A_powers[symbol]
+                current_calculation = einsum(matrix, vec, 'R V, V h n -> R h n')
+
+                if output is None:
+                    output = current_calculation
+                else:
+                    output = output * current_calculation
+            outputs[direction] = output
+        for direction, matrix in outputs.items():
+            outputs[direction] = rearrange(matrix, '(r1 r2) h n-> r1 r2 h n',
+                                           r1=self.one_side_length ** 2,
+                                           r2=self.coeff_calc.coeff_rows_amount // (self.one_side_length ** 2))
+            # Sum over the second dimension
+            outputs[direction] = torch.sum(outputs[direction], dim=1)
+        return outputs
 
     def _compute_kernel(self):
         self._kernel = None
+        A, B_1, B_2 = self._calc_coeffs()
         # l x l x D x N
         outputs = self.compute_x_matrix(self.one_side_length)
         # L x L x D x N
@@ -227,8 +238,12 @@ class TwoDimensionalSSM(nn.Module):
         else:
             C_1 = self.C_1
             C_2 = self.C_2
-        C = torch.stack([C_1, C_2], dim=0) * self.scale
-        output = einsum(outputs, C, 'direction patches n_ssm N, directions  n_ssm N -> patches n_ssm')
+        # C_1 = torch.softmax(C_1, dim=1)
+        # C_2 = torch.softmax(C_2, dim=1)
+        output_horizontal = einsum(outputs['horizontal'], C_1 * self.scale, "l H N ,H N->l H")
+        output_vertical = einsum(outputs['vertical'], C_2 * self.scale, "l H N ,H N->l H")
+        # L x L x H
+        output = output_horizontal + output_vertical
 
         output = output.view(self.one_side_length, self.one_side_length, self.kernel_dim)
         output[0, :, :, ] *= 2
@@ -245,6 +260,14 @@ class TwoDimensionalSSM(nn.Module):
         A, B1, B2 = self._calc_coeffs()
         return self.coeff_calc.compute_sympy_kernel(A, B1, B2, self.C_1, self.C_2)
 
+    def coeffs(self):
+        if self.training:
+            return self._calc_coeffs()
+        else:
+            if self._coeffs is None:
+                self._coeffs = self._calc_coeffs()
+            return self._coeffs
+
     def kernel(self):
         return self._compute_kernel()
 
@@ -259,7 +282,7 @@ class TwoDimensionalSSM(nn.Module):
                 keys that are pads, of shape `(batch, src_len)`, where
                 padding elements are indicated by 1s.
         """
-        tot_time_start = timeit.default_timer()
+        start_time = timeit.default_timer()
         seq_len, bsz, embed_dim = x.size()
 
         assert embed_dim == self.embed_dim
@@ -273,8 +296,11 @@ class TwoDimensionalSSM(nn.Module):
         # D x L
         fft_len = seq_len
         fft_len = int(math.sqrt(fft_len))
+        kernel_time_start = timeit.default_timer()
         k = self.kernel().permute(2, 0, 1)  # H x L x L
-        # return residual
+        kernel_time = timeit.default_timer() - kernel_time_start
+        if self.dont:
+            return residual
         s = 0
         if self.save_kernel:
             for i in range(k.shape[0]):
@@ -284,6 +310,7 @@ class TwoDimensionalSSM(nn.Module):
 
         x = x.view(bsz, embed_dim, fft_len, fft_len)
         out = None
+
         if self.directions_amount > 1:
             # Split kernels to four directions
             kernels = list(
@@ -301,21 +328,21 @@ class TwoDimensionalSSM(nn.Module):
             for idx, flip in enumerate(flip_dims):
                 k = kernels[idx]
                 # pad k to be the size of x
-                # k = torch.nn.functional.pad(k, (0, x.shape[-1] - k.shape[-1], 0, x.shape[-2] - k.shape[-2]))
+                k = torch.nn.functional.pad(k, (0, x.shape[-1] - k.shape[-1], 0, x.shape[-2] - k.shape[-2]))
                 curr_x = torch.flip(x, dims=flip)
-                fft_start = timeit.default_timer()
+                fft_start_time = timeit.default_timer()
                 k_f = torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len))
                 x_f = torch.fft.rfft2(curr_x.float(), s=(2 * fft_len, 2 * fft_len))
                 curr = torch.fft.irfft2(x_f * k_f, s=(2 * fft_len, 2 * fft_len))[..., s:fft_len + s,
                        s:fft_len + s]
-                fft_end = timeit.default_timer()
-                fft_times.append(fft_end - fft_start)
+                fft_end_time = timeit.default_timer()
+                fft_times.append(fft_end_time - fft_start_time)
                 curr_after_flip = torch.flip(curr, dims=flip)
                 if out is None:
                     out = curr_after_flip
                 else:
                     out += curr_after_flip
-            fft_tot_time = sum(fft_times)
+            fft_total_time = sum(fft_times)
         else:
             k_f = torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len))
             x_f = torch.fft.rfft2(x.float(), s=(2 * fft_len, 2 * fft_len))
@@ -325,12 +352,13 @@ class TwoDimensionalSSM(nn.Module):
         out = rearrange(out, 'b d l1 l2 -> b d (l1 l2)')
         # B x D x L -> L x B x D
         out = out.permute(2, 0, 1) + residual
-        tot_end = timeit.default_timer()
-        # print('The portion of fft is: ', fft_tot_time / (tot_end - tot_time_start))
-        # print('Total time is: ', tot_end - tot_time_start)
-        self.tot_time += tot_end - tot_time_start
-        # self.i+=1
-        # if self.i%200==0:
-        #     print('The average time is: ', self.tot_time/self.i)
         # out = F.silu(out.permute(2, 0, 1) + residual)
+        end_total = timeit.default_timer() - start_time
+        self.times.append(end_total)
+        self.i += 1
+        # if self.i % 200 == 0:
+        #     print('Average time inside two_d_ssm is:', sum(self.times) / len(self.times))
+        # print('FFT portion of the time: ', fft_total_time / end_total)
+        # print('Kernel portion of the time: ', kernel_time / end_total)
+        # print('Total time:',end_total)
         return self.normalization(out)

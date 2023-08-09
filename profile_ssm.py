@@ -1,12 +1,13 @@
 
 import torch
 from models.mega.two_d_ssm_recursive import TwoDimensionalSSM
+from models.mega.two_d_ssm_recursive_old import TwoDimensionalSSMOld
 import timeit
 
 import argparse
 
 
-def profile():
+def profile(cls_type=TwoDimensionalSSM,layers_amount=12,runs=200):
     embed_dim = 128
     L = 8 ** 2
     args = argparse.Namespace(
@@ -17,13 +18,13 @@ def profile():
         directions_amount=4,
         force_ssm_length=None)
     layers = []
-    for i in range(12):
-        ssm = TwoDimensionalSSM(embed_dim, L=L, args=args)
+    for i in range(layers_amount):
+        ssm = cls_type(embed_dim, L=L, args=args)
         activ = torch.nn.SiLU()
-        mlp = torch.nn.Linear(embed_dim, embed_dim)
+        # mlp = torch.nn.Linear(embed_dim, embed_dim)
         layers.append(ssm)
         layers.append(activ)
-        layers.append(mlp)
+        # layers.append(mlp)
     model = torch.nn.Sequential(*layers).to('cuda')
 
     batch_size = 4
@@ -36,7 +37,8 @@ def profile():
     backward_times = []
     import tqdm
 
-    for i in tqdm.tqdm(range(200)):
+    for i in tqdm.tqdm(range(runs)):
+        optimizer.zero_grad()
         start_forward = timeit.default_timer()
         out = model.forward(x)
         end_forward = timeit.default_timer()
@@ -46,8 +48,16 @@ def profile():
         end_backward = timeit.default_timer()
         forward_times.append(end_forward - start_forward)
         backward_times.append(end_backward - end_forward)
+        if i==0:
+            forward_times = forward_times[1:]
+            backward_times = backward_times[1:]
     print('Forward time: ', sum(forward_times) / len(forward_times))
     print('Backward time: ', sum(backward_times) / len(backward_times))
 
 if __name__ == '__main__':
-    profile()
+    layers = 10
+    runs = 100
+    print('New:')
+    profile(TwoDimensionalSSM, layers, runs)
+    print('Old:')
+    profile(TwoDimensionalSSMOld, layers, runs)

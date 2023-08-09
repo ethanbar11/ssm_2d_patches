@@ -296,7 +296,4 @@ class ViT(nn.Module):
         end = timeit.default_timer()
         self.tot_times.append(end-start)
         self.idx += 1
-        if self.idx== 100:
-            print('Average time: ', sum(self.tot_times) / len(self.tot_times))
-            exit()
         return out
