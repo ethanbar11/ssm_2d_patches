@@ -23,7 +23,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 from models.mega.two_d_ssm_recursive import TwoDimensionalSSM
-from src.models.sequence.modules.s4nd import S4ND
+# from src.models.sequence.modules.s4nd import S4ND
 
 
 class Mlp(nn.Module):

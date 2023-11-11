@@ -20,7 +20,7 @@ from .mega.moving_average_gated_attention import MovingAverageGatedAttention
 from .mega.mega_layer import MegaLayer
 from .mega.exponential_moving_average import MultiHeadEMA
 from .mega.two_d_ssm_recursive import TwoDimensionalSSM
-from src.models.sequence.modules.s4nd import S4ND
+# from src.models.sequence.modules.s4nd import S4ND
 from .mix_ffn import MixFFN
 
 

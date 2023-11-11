@@ -7,7 +7,7 @@ from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 from torch.nn import Module
 
-from src.models.sequence.modules.s4nd import S4ND
+# from src.models.sequence.modules.s4nd import S4ND
 from .SPT import ShiftedPatchTokenization
 from .mega.exponential_moving_average import MultiHeadEMA
 from .mega.relative_positional_bias import RelativePositionalBias

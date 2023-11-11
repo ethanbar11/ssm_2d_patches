@@ -18,7 +18,7 @@ from .sequence_norm import SequenceNorm
 from .exponential_moving_average import MultiHeadEMA
 from .two_d_ssm_recursive import TwoDimensionalSSM
 from .mega_utils import relu2, laplace, get_activation_fn
-from src.models.sequence.modules.s4nd import S4ND
+# from src.models.sequence.modules.s4nd import S4ND
 
 class MovingAverageGatedAttention(nn.Module):
     """Exponential Moving Average Gated Attention.

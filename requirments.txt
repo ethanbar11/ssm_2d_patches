@@ -2,7 +2,10 @@ numpy
 sympy
 wandb
 pandas
-coloarama
+coloarma
 tensorboard
 einops
 timm
+wandb
+omegaconf
+matplotlib

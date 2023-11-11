@@ -10,7 +10,7 @@ from models.mega.exponential_moving_average import MultiHeadEMA
 from models.mega.two_d_ssm_recursive import TwoDimensionalSSM
 from .mega.relative_positional_bias import RelativePositionalBias
 
-from src.models.sequence.modules.s4nd import S4ND
+# from src.models.sequence.modules.s4nd import S4ND
 from .mix_ffn import MixFFN
 
 

@@ -11,7 +11,6 @@ import torch.optim
 import torch.utils.data
 import torchvision.transforms as transforms
 from colorama import Fore, Style
-from torchsummary import summary
 from utils.losses import LabelSmoothingCrossEntropy
 import os
 from utils.sampler import RASampler
@@ -20,10 +19,11 @@ from utils.logger_dict import Logger_dict
 from utils.print_progress import progress_bar
 from utils.training_functions import accuracy
 import argparse
+from torch.utils.tensorboard import SummaryWriter
+
 from utils.scheduler import build_scheduler
 from utils.dataloader import datainfo, dataload
 from models.create_model import create_model
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import warnings
 
@@ -369,6 +369,7 @@ def main(args):
         print(Style.RESET_ALL)
 
         writer.add_scalar("Learning Rate", lr, epoch)
+        writer.add_scalar("Learning Rate", lr, epoch)
 
     print(Fore.RED + '*' * 80)
     logger.debug(f'best top-1: {best_acc1:.2f}, final top-1: {acc1:.2f}')
@@ -570,7 +571,6 @@ if __name__ == '__main__':
     global writer
 
     # random seed
-
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)  # if you are using multi-GPU.
@@ -580,17 +580,6 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-    # model_name = args.model
-    #
-    # if not args.is_SPT:
-    #     model_name += "-Base"
-    # else:
-    #     model_name += "-SPT"
-    #
-    # if args.is_LSA:
-    #     model_name += "-LSA"
-    #
-    # model_name += f"-{args.tag}-{args.dataset}-LR[{args.lr}]-Seed{args.seed}"
     model_name = args.name
 
     save_path = os.path.join(os.getcwd(), args.dataset, model_name)
