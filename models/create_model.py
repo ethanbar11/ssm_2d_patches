@@ -1,3 +1,4 @@
+from timm.models.convnext import ConvNeXt
 from .vit import ViT
 from .cait import CaiT
 from .pit import PiT
@@ -5,6 +6,7 @@ from .swin import SwinTransformer
 from .t2t import T2T_ViT
 from models.vision_mega import VisionMEGA
 from models.convit import ConvitVisionTransformer
+
 
 def create_model(img_size, n_classes, args):
     if args.model == 'vit':
@@ -15,13 +17,14 @@ def create_model(img_size, n_classes, args):
 
     elif args.model == "convit":
         patch_size = 4 if img_size == 32 else 8
-        model = ConvitVisionTransformer(img_size=img_size,patch_size=patch_size, num_classes=n_classes, depth=9,
-                                        embed_dim=args.embed_dim,mlp_ratio=2,num_heads=12,drop_rate=args.sd,args=args)
+        model = ConvitVisionTransformer(img_size=img_size, patch_size=patch_size, num_classes=n_classes, depth=9,
+                                        embed_dim=args.embed_dim, mlp_ratio=2, num_heads=12, drop_rate=args.sd,
+                                        args=args)
 
     elif args.model == 'cait':
         patch_size = 4 if img_size == 32 else 8
         model = CaiT(img_size=img_size, patch_size=patch_size, num_classes=n_classes, stochastic_depth=args.sd,
-                     is_LSA=args.is_LSA, is_SPT=args.is_SPT,args=args)
+                     is_LSA=args.is_LSA, is_SPT=args.is_SPT, args=args)
 
     elif args.model == 'pit':
         patch_size = 2 if img_size == 32 else 4
@@ -56,7 +59,13 @@ def create_model(img_size, n_classes, args):
         model = VisionMEGA(img_size=img_size, patch_size=patch_size, num_classes=n_classes, depth=9,
                            embed_dim=args.embed_dim, hidden_dim=args.embed_dim,
                            ffn_hidden_dim=args.embed_dim, zdim=args.embed_dim, ndim=args.ndim, args=args)
+    elif args.model == 'convnext':
+        # Expecting input size to be same as ImageNet-1K, meaning 224x224.
+        model = ConvNeXt(num_classes=n_classes, drop_path_rate=args.sd)
 
-
+    elif args.model == 'convnext-32px':
+        # Expecting input size to be same as CIFAR-10, CIFAR-100
+        model = ConvNeXt(num_classes=n_classes, drop_path_rate=args.sd, dims=(64, 128, 256, 512),
+                         depths=(2, 2, 2, 2), patch_size=1)
 
     return model

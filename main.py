@@ -24,10 +24,14 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import warnings
 
+import ssl
+
+ssl._create_default_https_context = ssl._create_unverified_context
+
 warnings.filterwarnings("ignore", category=Warning)
 
 best_acc1 = 0
-MODELS = ['vit', 'swin', 'pit', 'cait', 't2t', 'mega', 'convit']
+MODELS = ['vit', 'swin', 'pit', 'cait', 't2t', 'mega', 'convit', 'convnext', 'convnext-32px']
 
 
 def create_optimization_groups(model, args):
@@ -59,7 +63,8 @@ def init_parser():
     parser.add_argument('--name', default='default_run', type=str, help='run name')
     parser.add_argument('--project', default='', type=str, help='project name')
 
-    parser.add_argument('--dataset', default='CIFAR10', choices=['CIFAR10', 'CIFAR100', 'T-IMNET', 'SVHN'], type=str,
+    parser.add_argument('--dataset', default='CIFAR10',
+                        choices=['CIFAR10', 'CIFAR100', 'CIFAR100-224px', 'T-IMNET', 'SVHN'], type=str,
                         help='Dataset')
     parser.add_argument('--ema', default=None, choices=['ema', 'ssm_2d', 's4nd', 'none', None], type=str,
                         help='EMA type')
@@ -92,7 +97,7 @@ def init_parser():
 
     parser.add_argument('--enable_aug', action='store_true', help='disable augmentation policies for training')
 
-    parser.add_argument('--gpu', default=0, type=int)
+    # parser.add_argument('--gpu', default=0, type=int)
 
     parser.add_argument('--no_cuda', action='store_true', help='disable cuda')
 
@@ -174,6 +179,9 @@ def init_parser():
     return parser
 
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 def main(args):
     if args.project != '':
         # should_resume = True if args.resume != None and args.resume != '' else False
@@ -182,13 +190,10 @@ def main(args):
     else:
         args.wandb = False
     global best_acc1
-
-    torch.cuda.set_device(args.gpu)
     data_info = datainfo(logger, args)
 
     model = create_model(data_info['img_size'], data_info['n_classes'], args)
-    print(model)
-    model.cuda(args.gpu)
+    model.to(device)
     # s = 0
     # for name, param in model.named_parameters():
     #     if param.requires_grad and 'blocks.0' in name:
@@ -223,7 +228,7 @@ def main(args):
         logger.debug(f'Stochastic depth({args.sd}) used ')
         print('*' * 80 + Style.RESET_ALL)
 
-    criterion = criterion.cuda(args.gpu)
+    criterion = criterion.to(device)
 
     normalize = [transforms.Normalize(mean=data_info['stat'][0], std=data_info['stat'][1])]
 
@@ -267,6 +272,7 @@ def main(args):
             augmentations += [
                 SVHNPolicy()
             ]
+
 
         else:
             from utils.autoaug import ImageNetPolicy
@@ -364,14 +370,15 @@ def main(args):
 
 
 def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
+    global device
     model.train()
     loss_val, acc1_val = 0, 0
     n = 0
 
     for i, (images, target) in enumerate(train_loader):
         if (not args.no_cuda) and torch.cuda.is_available():
-            images = images.cuda(args.gpu, non_blocking=True)
-            target = target.cuda(args.gpu, non_blocking=True)
+            images = images.to(device)
+            target = target.to(device)
 
         # Cutmix only
         if args.cm and not args.mu:
@@ -469,13 +476,14 @@ def train(train_loader, model, criterion, optimizer, epoch, scheduler, args):
 
 def validate(val_loader, model, criterion, lr, args, epoch=None):
     model.eval()
+    global device
     loss_val, acc1_val = 0, 0
     n = 0
     with torch.no_grad():
         for i, (images, target) in enumerate(val_loader):
             if (not args.no_cuda) and torch.cuda.is_available():
-                images = images.cuda(args.gpu, non_blocking=True)
-                target = target.cuda(args.gpu, non_blocking=True)
+                images = images.to(device)
+                target = target.to(device)
 
             output = model(images)
             loss = criterion(output, target)

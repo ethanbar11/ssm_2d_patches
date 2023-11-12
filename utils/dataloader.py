@@ -21,6 +21,14 @@ def datainfo(logger, args):
         img_mean, img_std = (0.5070, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)
         img_size = 32
 
+    elif args.dataset == 'CIFAR100-224px':
+        print(Fore.YELLOW + '*' * 80)
+        logger.debug('CIFAR100-224px')
+        print('*' * 80 + Style.RESET_ALL)
+        n_classes = 100
+        img_mean, img_std = (0.5070, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)
+        img_size = 224
+
     elif args.dataset == 'SVHN':
         print(Fore.YELLOW + '*' * 80)
         logger.debug('SVHN')
@@ -65,6 +73,18 @@ def dataload(args, augmentations, normalize, data_info):
                 transforms.ToTensor(),
                 *normalize]))
 
+    elif args.dataset == 'CIFAR100-224px':
+        # Inserting the resize before all the augmentations.
+        augmentations = list(augmentations.transforms)
+        augmentations.insert(0, transforms.Resize(data_info['img_size']))
+        augmentations = transforms.Compose(augmentations)
+        train_dataset = datasets.CIFAR100(
+            root=args.data_path, train=True, download=True, transform=augmentations)
+        val_dataset = datasets.CIFAR100(
+            root=args.data_path, train=False, download=False, transform=transforms.Compose([
+                transforms.Resize(data_info['img_size']),
+                transforms.ToTensor(),
+                *normalize]))
     elif args.dataset == 'SVHN':
 
         train_dataset = datasets.SVHN(
