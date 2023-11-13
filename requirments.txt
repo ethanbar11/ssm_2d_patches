@@ -2,7 +2,7 @@ numpy
 sympy
 wandb
 pandas
-coloarma
+colorama
 tensorboard
 einops
 timm
