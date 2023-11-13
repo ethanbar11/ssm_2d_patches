@@ -67,8 +67,8 @@ class CoeffCalculator:
             for direction in self.matrices:
                 # Pad B with zeros
                 B[direction] = torch.nn.functional.pad(self.matrices[direction]['B'],
-                                            (0, self.matrices[direction]['A_1'].shape[1] - 2, 0,0 ))
-                for key,mat in self.matrices[direction].items():
+                                                       (0, self.matrices[direction]['A_1'].shape[1] - 2, 0, 0))
+                for key, mat in self.matrices[direction].items():
                     self.matrices[direction][key] = mat.to_dense()
             self.horizontal_as_one = torch.cat(
                 [self.matrices['horizontal']['A_1'].unsqueeze(0), self.matrices['horizontal']['A_2'].unsqueeze(0),
@@ -78,11 +78,14 @@ class CoeffCalculator:
                 [self.matrices['vertical']['A_1'].unsqueeze(0), self.matrices['vertical']['A_2'].unsqueeze(0),
                  self.matrices['vertical']['A_3'].unsqueeze(0), self.matrices['vertical']['A_4'].unsqueeze(0),
                  B['vertical'].unsqueeze(0)], dim=0).unsqueeze(0)
-            self.whole_as_one = torch.cat([self.horizontal_as_one, self.vertical_as_one], dim=0).to('cuda')
         else:
             self.initialize_matrices()
             self.set_final_coeffs_matrix()
+            dir_name = os.path.dirname(checked_cache_location)
+            if not os.path.exists(dir_name):
+                os.makedirs(dir_name)
             torch.save(self.matrices, checked_cache_location)
+        self.whole_as_one = torch.cat([self.horizontal_as_one, self.vertical_as_one], dim=0).to('cuda')
 
     def initialize_matrices(self):
         for i in range(self.L):

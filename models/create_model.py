@@ -9,6 +9,7 @@ from models.convit import ConvitVisionTransformer
 
 
 def create_model(img_size, n_classes, args):
+    name = 'no name'
     if args.model == 'vit':
         patch_size = 4 if img_size == 32 else 8
         model = ViT(img_size=img_size, patch_size=patch_size, num_classes=n_classes, dim=args.embed_dim,
@@ -61,11 +62,21 @@ def create_model(img_size, n_classes, args):
                            ffn_hidden_dim=args.embed_dim, zdim=args.embed_dim, ndim=args.ndim, args=args)
     elif args.model == 'convnext':
         # Expecting input size to be same as ImageNet-1K, meaning 224x224.
-        model = ConvNeXt(num_classes=n_classes, drop_path_rate=args.sd)
+        model = ConvNeXt(num_classes=n_classes, drop_path_rate=args.sd, args=args)
 
     elif args.model == 'convnext-32px':
         # Expecting input size to be same as CIFAR-10, CIFAR-100
+        if args.ema:
+            assert args.ssm_kernel_size, "Currently the parameter ssm_kernel_size should be set to something when using " \
+                                         "ConvNext, as we use truncated kernels with specific size (and not global as " \
+                                         "normal)."
+        args.img_size = img_size
         model = ConvNeXt(num_classes=n_classes, drop_path_rate=args.sd, dims=(64, 128, 256, 512),
-                         depths=(2, 2, 2, 2), patch_size=1)
+                         depths=(2, 2, 2, 2), patch_size=1, args=args)
+        if not args.ema:
+            name = 'baseline'
+        else:
+            string_indicating_real_or_complex = 'Complex' if args.complex_ssm else 'Real'
+            name = f'{string_indicating_real_or_complex} n_ssm = {args.n_ssm} n_dim = {args.ndim}'
 
-    return model
+    return model, name

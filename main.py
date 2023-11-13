@@ -1,4 +1,6 @@
 import wandb
+
+from utils.memory_counter import print_model_memory_consumption
 from utils.mix import cutmix_data, mixup_data, mixup_criterion
 import numpy as np
 import random
@@ -23,6 +25,7 @@ from models.create_model import create_model
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import warnings
+from datetime import datetime
 
 import ssl
 
@@ -42,13 +45,11 @@ def create_optimization_groups(model, args):
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue  # frozen weights
-
-        if name.endswith(".bias") or (len(param.shape) == 1 and name.endswith(".weight")) or name in skip_list or (
-                '.move.' in name and 'omega' not in name):
-            # print("no weight decay: {}".format(name))
+        if hasattr(param, 'should_be_without_weight_decay') and param.should_be_without_weight_decay:
+            no_decay.append(param)
+        elif name.endswith(".bias"):
             no_decay.append(param)
         else:
-            # print("weight decay: {}".format(name))
             decay.append(param)
     return [
         {'params': no_decay, 'weight_decay': 0.},
@@ -60,7 +61,7 @@ def init_parser():
 
     # Data args
     parser.add_argument('--data_path', default='./dataset', type=str, help='dataset path')
-    parser.add_argument('--name', default='default_run', type=str, help='run name')
+    parser.add_argument('--name', default=None, type=str, help='run name')
     parser.add_argument('--project', default='', type=str, help='project name')
 
     parser.add_argument('--dataset', default='CIFAR10',
@@ -168,11 +169,15 @@ def init_parser():
                         help='Whether to rel pos embed or abs pos embed in ViT')
     parser.add_argument('--normalize', action='store_true', default=False,
                         help='Perform normalization after SSM')
+    parser.add_argument('--use_residual_inside_ssm', action='store_true', default=False,
+                        help='Uses residual inside the SSM. Some backbones (Like ConvNext) do it outside as well.')
+
     parser.add_argument('--no_pos_embedding', action='store_true', default=False,
                         help='Whether to rel pos embed or abs pos embed in ViT')
 
-    parser.add_argument('--force_ssm_length', type=int, default=None,
+    parser.add_argument('--ssm_kernel_size', type=int, default=None,
                         help='Use shorter than the default ssm length')
+
     parser.add_argument('--use_mix_ffn', action='store_true', default=False,
                         help='Use mix ffn')
 
@@ -183,36 +188,30 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def main(args):
+    data_info = datainfo(logger, args)
+    model, run_name_with_model = create_model(data_info['img_size'], data_info['n_classes'], args)
+    model.to(device)
+
     if args.project != '':
+        run_name_with_model = run_name_with_model if not args.name else args.name
         # should_resume = True if args.resume != None and args.resume != '' else False
-        wandb.init(project=args.project, name=args.name, config=args)
+        wandb.init(project=args.project, name=run_name_with_model, config=args)
         args.wandb = True
     else:
         args.wandb = False
     global best_acc1
-    data_info = datainfo(logger, args)
 
-    model = create_model(data_info['img_size'], data_info['n_classes'], args)
-    model.to(device)
-    # s = 0
-    # for name, param in model.named_parameters():
-    #     if param.requires_grad and 'blocks.0' in name:
-    #         print(name, param.shape, param.numel())
-    #         s += param.numel()
-    #         print(s)
-    # print(s)
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print_model_memory_consumption(model,logger)
     if args.wandb:
         wandb.log({'n_parameters': n_parameters}, commit=False)
-    print(f'Number of params: {format(n_parameters, ",")}')
-    print(Fore.GREEN + '*' * 80)
-    # exit()
-    logger.debug(f"Creating model: {model_name}")
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logger.debug(Fore.GREEN + '*' * 80)
+    logger.debug(f"Creating model: {run_name_with_model}")
+    logger.debug(str(model))
     logger.debug(f'Number of params: {format(n_parameters, ",")}')
     logger.debug(f'Initial learning rate: {args.lr:.6f}')
     logger.debug(f"Start training for {args.epochs} epochs")
-    print('*' * 80 + Style.RESET_ALL)
+    logger.debug('*' * 80 + Style.RESET_ALL)
 
     if args.ls:
         print(Fore.YELLOW + '*' * 80)
@@ -314,9 +313,7 @@ def main(args):
 
     # summary(model, (3, data_info['img_size'], data_info['img_size']))
 
-    print()
-    print("Beginning training")
-    print()
+    logger.debug("\nBeginning training\n")
 
     lr = optimizer.param_groups[0]["lr"]
 
@@ -530,13 +527,17 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-    model_name = args.name
+    # Get current time
+    current_time = datetime.now()
 
-    save_path = os.path.join(os.getcwd(), args.dataset, model_name)
+    # Format as day_month_year_hour_minute
+    formatted_time = current_time.strftime("%d_%m_%Y_%H_%M")
+
+    save_path = os.path.join(os.getcwd(), args.dataset, args.model, formatted_time)
     if save_path:
         os.makedirs(save_path, exist_ok=True)
 
-    writer = SummaryWriter(os.path.join(os.getcwd(), 'tensorboard', model_name))
+    writer = SummaryWriter(os.path.join(os.getcwd(), 'tensorboard'))
 
     # logger
 

@@ -64,6 +64,14 @@ ConvNext for small datasets
 
 To create original results from: https://juliusruseckas.github.io/ml/convnext-cifar10.html
 Notice original results are with batch-size = 128
+
 ```bash
-python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1
+python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1  
 ```
+
+And with SSM:
+
+```bash
+python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1  --ema ssm_2d --ssm_kernel_size 7 --n_ssm 8
+```
+Wandb project: convnext_cifar10

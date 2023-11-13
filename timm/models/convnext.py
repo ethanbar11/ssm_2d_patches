@@ -44,6 +44,7 @@ from typing import Callable, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 
+from models.mega.two_d_ssm_recursive import TwoDimensionalSSM
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD, OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
 from timm.layers import trunc_normal_, AvgPool2dSame, DropPath, Mlp, GlobalResponseNormMlp, \
     LayerNorm2d, LayerNorm, create_conv2d, get_act_layer, make_divisible, to_ntuple
@@ -103,6 +104,7 @@ class ConvNeXtBlock(nn.Module):
             act_layer: Union[str, Callable] = 'gelu',
             norm_layer: Optional[Callable] = None,
             drop_path: float = 0.,
+            args=None,
     ):
         """
 
@@ -129,15 +131,19 @@ class ConvNeXtBlock(nn.Module):
             norm_layer = LayerNorm2d if conv_mlp else LayerNorm
         mlp_layer = partial(GlobalResponseNormMlp if use_grn else Mlp, use_conv=conv_mlp)
         self.use_conv_mlp = conv_mlp
-        self.conv_dw = create_conv2d(
-            in_chs,
-            out_chs,
-            kernel_size=kernel_size,
-            stride=stride,
-            dilation=dilation[0],
-            depthwise=True,
-            bias=conv_bias,
-        )
+        if not args.ema:
+            self.conv_dw = create_conv2d(
+                in_chs,
+                out_chs,
+                kernel_size=kernel_size,
+                stride=stride,
+                dilation=dilation[0],
+                depthwise=True,
+                bias=conv_bias,
+            )
+        elif args.ema == 'ssm_2d':
+            assert out_chs == in_chs
+            self.conv_dw = TwoDimensionalSSM(embed_dim=in_chs, L=args.ssm_kernel_size ** 2, args=args)
         self.norm = norm_layer(out_chs)
         self.mlp = mlp_layer(out_chs, int(mlp_ratio * out_chs), act_layer=act_layer)
         self.gamma = nn.Parameter(ls_init_value * torch.ones(out_chs)) if ls_init_value is not None else None
@@ -182,7 +188,8 @@ class ConvNeXtStage(nn.Module):
             use_grn=False,
             act_layer='gelu',
             norm_layer=None,
-            norm_layer_cl=None
+            norm_layer_cl=None,
+            args=None
     ):
         super().__init__()
         self.grad_checkpointing = False
@@ -221,6 +228,7 @@ class ConvNeXtStage(nn.Module):
                 use_grn=use_grn,
                 act_layer=act_layer,
                 norm_layer=norm_layer if conv_mlp else norm_layer_cl,
+                args=args
             ))
             in_chs = out_chs
         self.blocks = nn.Sequential(*stage_blocks)
@@ -262,6 +270,7 @@ class ConvNeXt(nn.Module):
             norm_eps: Optional[float] = None,
             drop_rate: float = 0.,
             drop_path_rate: float = 0.,
+            args=None,
     ):
         """
         Args:
@@ -285,6 +294,7 @@ class ConvNeXt(nn.Module):
             norm_layer: Normalization layer type.
             drop_rate: Head pre-classifier dropout rate.
             drop_path_rate: Stochastic depth drop rate.
+            args: General arguments, mostly regarding the 2-D SSM variant of ConvNext
         """
         super().__init__()
         assert output_stride in (8, 16, 32)
@@ -296,7 +306,7 @@ class ConvNeXt(nn.Module):
                 norm_layer = partial(norm_layer, eps=norm_eps)
                 norm_layer_cl = partial(norm_layer_cl, eps=norm_eps)
         else:
-            assert conv_mlp,\
+            assert conv_mlp, \
                 'If a norm_layer is specified, conv MLP must be used so all norm expect rank-4, channels-first input'
             norm_layer_cl = norm_layer
             if norm_eps is not None:
@@ -353,6 +363,7 @@ class ConvNeXt(nn.Module):
                 act_layer=act_layer,
                 norm_layer=norm_layer,
                 norm_layer_cl=norm_layer_cl,
+                args=args
             ))
             prev_chs = out_chs
             # NOTE feature_info use currently assumes stage 0 == stride 1, rest are stride 2
@@ -567,10 +578,10 @@ default_cfgs = generate_default_cfgs({
 
     'convnext_tiny.in12k_ft_in1k_384': _cfg(
         hf_hub_id='timm/',
-       input_size=(3, 384, 384), pool_size=(12, 12),  crop_pct=1.0, crop_mode='squash'),
+        input_size=(3, 384, 384), pool_size=(12, 12), crop_pct=1.0, crop_mode='squash'),
     'convnext_small.in12k_ft_in1k_384': _cfg(
         hf_hub_id='timm/',
-        input_size=(3, 384, 384), pool_size=(12, 12), crop_pct=1.0,  crop_mode='squash'),
+        input_size=(3, 384, 384), pool_size=(12, 12), crop_pct=1.0, crop_mode='squash'),
 
     'convnext_nano.in12k': _cfg(
         hf_hub_id='timm/',
@@ -930,7 +941,7 @@ def convnext_pico(pretrained=False, **kwargs) -> ConvNeXt:
 @register_model
 def convnext_pico_ols(pretrained=False, **kwargs) -> ConvNeXt:
     # timm nano variant with overlapping 3x3 conv stem
-    model_args = dict(depths=(2, 2, 6, 2), dims=(64, 128, 256, 512), conv_mlp=True,  stem_type='overlap_tiered')
+    model_args = dict(depths=(2, 2, 6, 2), dims=(64, 128, 256, 512), conv_mlp=True, stem_type='overlap_tiered')
     model = _create_convnext('convnext_pico_ols', pretrained=pretrained, **dict(model_args, **kwargs))
     return model
 

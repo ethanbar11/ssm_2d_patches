@@ -53,29 +53,19 @@ class TwoDimensionalSSM(nn.Module):
     def __init__(
             self,
             embed_dim,
-            ndim=2,
-            truncation=None,
             L=32 ** 2,
             force_coeff_calc=False,
-            use_static_kernel=True,
             args=None,
-            save_path=None
     ):
         super().__init__()
         self.is_2_dim = True
-        self.truncation = truncation
         self.embed_dim = embed_dim
         self.ndim = args.ndim
-        if args.force_ssm_length is not None:
-            self.dont = True
-            L = min(args.force_ssm_length ** 2, L)
-        else:
-            self.dont = False
-
         self.n_ssm = args.n_ssm
         self.normalization = nn.LayerNorm(embed_dim) if args.normalize else nn.Identity()
         self.is_complex = args.complex_ssm
         self.directions_amount = args.directions_amount
+        self.use_residual = args.use_residual_inside_ssm
         self.repeat = self.embed_dim // self.n_ssm
 
         self.scale = math.sqrt(1.0 / self.ndim)
@@ -87,14 +77,23 @@ class TwoDimensionalSSM(nn.Module):
         self.coeff_calc.calc_coeffs_lazy(force=force_coeff_calc)
         self.matrices = self.coeff_calc.matrices
         self.one_matrix = self.coeff_calc.whole_as_one
+        if self.is_complex:
+            self.one_matrix = self.one_matrix.unsqueeze(-1)
+
+            # Create a tensor of zeros with the same shape as x_unsqueezed
+            zeros = torch.zeros_like(self.one_matrix)
+
+            # Concatenate along the last dimension to get a tensor of shape (a, b, 2)
+            self.one_matrix = torch.cat((self.one_matrix, zeros), -1)
+
+            self.one_matrix = _r2c(self.one_matrix)
         for key, inner_dic in self.matrices.items():
             for symbol, matrix in inner_dic.items():
                 if self.is_complex:
                     matrix = matrix.type(torch.complex64)
                 self.matrices[key][symbol] = matrix.cuda()
 
-        self.use_static_kernel = use_static_kernel
-        self.save_kernel = save_path
+        # self.save_kernel = save_path
         self.last_kernel = None
         # H x N
         if self.is_complex:
@@ -115,6 +114,7 @@ class TwoDimensionalSSM(nn.Module):
             # D x N
             self.C_1 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim, 2))
             self.C_2 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim, 2))
+            self.parameters_without_weight_decay = [self.A_angle, self.A_radius, self.B_1, self.B_2, self.C_1, self.C_2]
         else:
             self.A = {
                 'A_1': nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim)),
@@ -128,6 +128,10 @@ class TwoDimensionalSSM(nn.Module):
             # D x N
             self.C_1 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim))
             self.C_2 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim))
+            self.parameters_without_weight_decay = [self.A, self.B_1, self.B_2, self.C_1, self.C_2]
+
+        for param in self.parameters_without_weight_decay:
+            param.should_be_without_weight_decay = True
         # sized D because this is a residual connection (element-wise)
         self.omega = nn.Parameter(torch.Tensor(embed_dim))
 
@@ -207,7 +211,6 @@ class TwoDimensionalSSM(nn.Module):
                               'd R n_ssm N, d R n_ssm N, d R n_ssm N, d R n_ssm N, d R n_ssm N-> d R n_ssm N')
         whole_output = rearrange(whole_output, 'd (r1 r2) n_ssm N-> d r1 r2 n_ssm N', r1=self.one_side_length ** 2)
         whole_output = einsum(whole_output, 'd r1 r2 n_ssm N-> d r1 n_ssm N')
-        whole_output = repeat(A_values, '(a b) L n_ssm N -> a (b 2 L) n_ssm N', b=2)
         return whole_output
 
     def _compute_kernel(self):
@@ -234,12 +237,7 @@ class TwoDimensionalSSM(nn.Module):
         if self.is_complex:
             output = output.real
         self.last_kernel = output
-        # output = rearrange(torch.softmax(rearrange(output,'h w c -> (h w) c'),dim=0),'(h w) c -> h w c',h=8)
         return output
-
-    def compute_sympy_kernel(self):
-        A, B1, B2 = self._calc_coeffs()
-        return self.coeff_calc.compute_sympy_kernel(A, B1, B2, self.C_1, self.C_2)
 
     def kernel(self):
         return self._compute_kernel()
@@ -255,68 +253,69 @@ class TwoDimensionalSSM(nn.Module):
                 keys that are pads, of shape `(batch, src_len)`, where
                 padding elements are indicated by 1s.
         """
-        tot_time_start = timeit.default_timer()
-        seq_len, bsz, embed_dim = x.size()
 
-        assert embed_dim == self.embed_dim
+        assert self.directions_amount > 1
 
-        # L x B x D
-        residual = x * self.omega
+        if len(x.shape) == 3:
+            # Expecting L x B x D
+            seq_len, bsz, embed_dim = x.size()
+            residual = einsum(x, self.omega, 'L B D, D -> L B D')
 
-        # L x B x D -> B x D x L
-        x = x.permute(1, 2, 0)
+            # L x B x D -> B x D x L
+            x = x.permute(1, 2, 0)
+            fft_len = int(math.sqrt(seq_len))
+            x = x.view(bsz, embed_dim, fft_len, fft_len)
 
-        # D x L
-        fft_len = seq_len
-        fft_len = int(math.sqrt(fft_len))
-        k = self.kernel().permute(2, 0, 1)  # H x L x L
-        # return residual
-        s = 0
-        if self.save_kernel:
-            for i in range(k.shape[0]):
-                # Create image path and save it
-                img_path = os.path.join(self.save_kernel, f'kernel_{i}.png')
-                plot_heatmap(k[i], f'kernel {i}', save_image=True, save_path=img_path)
+        elif len(x.shape) == 4:
+            # Expecting B x D x L
+            bsz, embed_dim, seq_len, seq_len2 = x.size()
+            residual = einsum(x, self.omega, 'B D L1 L2, D -> B D L1 L2')
 
-        x = x.view(bsz, embed_dim, fft_len, fft_len)
-        out = None
-        if self.directions_amount > 1:
-            # Split kernels to four directions
-            kernels = list(
-                torch.split(k, [self.n_ssm for i in range(self.directions_amount)],
-                            dim=0))  # 4 kernels, one for each direction.
-            # for i in range(k.shape[0]):
-            #     plot_heatmap(k[i], f'kernel {i}')
-            # Transform Kernels from L x L x n_ssm -> L x L x H
-            kernels = [repeat(k, ' n l1 l2 ->  (h n) l1 l2', h=self.repeat) for k in kernels]
-            if self.directions_amount == 4:
-                flip_dims = [[], [-2], [-1], [-2, -1]]
-            else:
-                flip_dims = [[], [-2, -1]]
-            fft_times = []
-            for idx, flip in enumerate(flip_dims):
-                k = kernels[idx]
-                # pad k to be the size of x
-                # k = torch.nn.functional.pad(k, (0, x.shape[-1] - k.shape[-1], 0, x.shape[-2] - k.shape[-2]))
-                curr_x = torch.flip(x, dims=flip)
-
-                k_f = torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len))
-                x_f = torch.fft.rfft2(curr_x.float(), s=(2 * fft_len, 2 * fft_len))
-                curr = torch.fft.irfft2(x_f * k_f, s=(2 * fft_len, 2 * fft_len))[..., s:fft_len + s,
-                       s:fft_len + s]
-                curr_after_flip = torch.flip(curr, dims=flip)
-                if out is None:
-                    out = curr_after_flip
-                else:
-                    out += curr_after_flip
+            assert seq_len == seq_len2, "2-D SSM Currently implemented only for square images."
+            assert embed_dim == self.embed_dim
+            fft_len = seq_len
         else:
+            raise TypeError(
+                'Tensor inserted into 2-D SSM should be 3 dimensional (Length Batch Channels) or 4 dimensional (Batch '
+                'Dimension Length Length)')
+        # D x L
+        k = self.kernel().permute(2, 0, 1)  # (Directions * N_SSM) x kernel_size x kernel_size
+        if k.shape[-1] < fft_len:
+            padding_amount = fft_len - k.shape[-1]
+            k = torch.nn.functional.pad(k, (0, padding_amount, 0, padding_amount))
+        s = 0
+
+        out = None
+        # Split kernels to four directions
+        kernels = list(
+            torch.split(k, [self.n_ssm for i in range(self.directions_amount)],
+                        dim=0))  # 4 kernels, one for each direction.
+        # Transform Kernels from L x L x n_ssm -> L x L x H
+        kernels = [repeat(k, ' n l1 l2 ->  (h n) l1 l2', h=self.repeat) for k in kernels]
+        if self.directions_amount == 4:
+            flip_dims = [[], [-2], [-1], [-2, -1]]
+        else:
+            flip_dims = [[], [-2, -1]]
+        for idx, flip in enumerate(flip_dims):
+            k = kernels[idx]
+            # pad k to be the size of x
+            # k = torch.nn.functional.pad(k, (0, x.shape[-1] - k.shape[-1], 0, x.shape[-2] - k.shape[-2]))
+            curr_x = torch.flip(x, dims=flip)
+
             k_f = torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len))
-            x_f = torch.fft.rfft2(x.float(), s=(2 * fft_len, 2 * fft_len))
-            out = torch.fft.irfft2(x_f * k_f, s=(2 * fft_len, 2 * fft_len))[..., s:two_dim_seq_len + s,
-                  s:two_dim_seq_len + s]
+            x_f = torch.fft.rfft2(curr_x.float(), s=(2 * fft_len, 2 * fft_len))
+            curr = torch.fft.irfft2(x_f * k_f, s=(2 * fft_len, 2 * fft_len))[..., s:fft_len + s,
+                   s:fft_len + s]
+            curr_after_flip = torch.flip(curr, dims=flip)
+            if out is None:
+                out = curr_after_flip
+            else:
+                out += curr_after_flip
         out = out.type_as(x)
-        out = rearrange(out, 'b d l1 l2 -> b d (l1 l2)')
-        # B x D x L -> L x B x D
-        out = out.permute(2, 0, 1) + residual
-        # out = F.silu(out.permute(2, 0, 1) + residual)
-        return self.normalization(out)
+        if len(residual.shape) == 3 and self.use_residual:
+            # B x D x L -> L x B x D
+            out = out.permute(2, 0, 1) + residual
+        elif len(residual.shape) == 4 and self.use_residual:
+            out += residual
+
+        return self.normalization(out)  # notice normalization might be the identity function.
