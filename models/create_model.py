@@ -78,6 +78,6 @@ def create_model(img_size, n_classes, args):
             name = 'baseline'
         else:
             string_indicating_real_or_complex = 'Complex' if args.complex_ssm else 'Real'
-            name = f'{string_indicating_real_or_complex} n_ssm = {args.n_ssm} n_dim = {args.ndim}'
+            name = f'{string_indicating_real_or_complex} n_ssm = {args.n_ssm} n_dim = {args.ndim} kernel = {args.ssm_kernel_size}'
 
     return model, name
