@@ -10,7 +10,7 @@ from models.mega.exponential_moving_average import MultiHeadEMA
 from models.mega.two_d_ssm_recursive import TwoDimensionalSSM
 from .mega.relative_positional_bias import RelativePositionalBias
 
-from src.models.sequence.modules.s4nd import S4ND
+# from src.models.sequence.modules.s4nd import S4ND
 from .mix_ffn import MixFFN
 
 
@@ -133,7 +133,7 @@ class EmaAttention(Attention):
         if self.use_relative_pos_embedding:
             self.rel_pos_bias = RelativePositionalBias(num_patches + 1)
         if args.ema == 'ssm_2d':
-            self.move = TwoDimensionalSSM(self.dim, ndim=args.ndim, truncation=None, L=num_patches, args=args)
+            self.move = TwoDimensionalSSM(embed_dim=self.dim, L=num_patches, args=args)
         elif args.ema == 's4nd':
             config_path = args.s4nd_config
             # Read from config path with ymal
@@ -276,13 +276,13 @@ class ViT(nn.Module):
         )
 
         self.apply(init_weights)
-        self.tot_times =[]
+        self.tot_times = []
         self.idx = 0
 
     def forward(self, img):
         # patch embedding
         # B x C x H x W -> B x N x D
-        start=timeit.default_timer()
+        start = timeit.default_timer()
         x = self.to_patch_embedding(img)
 
         b, n, _ = x.shape
@@ -294,6 +294,6 @@ class ViT(nn.Module):
         x = self.transformer(x)
         out = self.mlp_head(x[:, 0])
         end = timeit.default_timer()
-        self.tot_times.append(end-start)
+        self.tot_times.append(end - start)
         self.idx += 1
         return out

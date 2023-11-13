@@ -105,6 +105,7 @@ class ConvNeXtBlock(nn.Module):
             norm_layer: Optional[Callable] = None,
             drop_path: float = 0.,
             args=None,
+            patches_amount=1000
     ):
         """
 
@@ -143,7 +144,8 @@ class ConvNeXtBlock(nn.Module):
             )
         elif args.ema == 'ssm_2d':
             assert out_chs == in_chs
-            self.conv_dw = TwoDimensionalSSM(embed_dim=in_chs, L=args.ssm_kernel_size ** 2, args=args)
+            L = min(patches_amount ** 2, args.ssm_kernel_size **2)
+            self.conv_dw = TwoDimensionalSSM(embed_dim=in_chs, L=L, args=args)
         self.norm = norm_layer(out_chs)
         self.mlp = mlp_layer(out_chs, int(mlp_ratio * out_chs), act_layer=act_layer)
         self.gamma = nn.Parameter(ls_init_value * torch.ones(out_chs)) if ls_init_value is not None else None
@@ -189,7 +191,8 @@ class ConvNeXtStage(nn.Module):
             act_layer='gelu',
             norm_layer=None,
             norm_layer_cl=None,
-            args=None
+            args=None,
+            patches_amount=None
     ):
         super().__init__()
         self.grad_checkpointing = False
@@ -228,7 +231,9 @@ class ConvNeXtStage(nn.Module):
                 use_grn=use_grn,
                 act_layer=act_layer,
                 norm_layer=norm_layer if conv_mlp else norm_layer_cl,
-                args=args
+                args=args,
+                patches_amount=patches_amount
+
             ))
             in_chs = out_chs
         self.blocks = nn.Sequential(*stage_blocks)
@@ -339,9 +344,11 @@ class ConvNeXt(nn.Module):
         prev_chs = dims[0]
         curr_stride = stem_stride
         dilation = 1
+        patches_amount = args.img_size
         # 4 feature resolution stages, each consisting of multiple residual blocks
         for i in range(4):
             stride = 2 if curr_stride == 2 or i > 0 else 1
+            patches_amount //= stride
             if curr_stride >= output_stride and stride > 1:
                 dilation *= stride
                 stride = 1
@@ -363,7 +370,8 @@ class ConvNeXt(nn.Module):
                 act_layer=act_layer,
                 norm_layer=norm_layer,
                 norm_layer_cl=norm_layer_cl,
-                args=args
+                args=args,
+                patches_amount=patches_amount
             ))
             prev_chs = out_chs
             # NOTE feature_info use currently assumes stage 0 == stride 1, rest are stride 2

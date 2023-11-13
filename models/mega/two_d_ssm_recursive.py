@@ -95,6 +95,7 @@ class TwoDimensionalSSM(nn.Module):
 
         # self.save_kernel = save_path
         self.last_kernel = None
+        self.C_dimensions = self.embed_dim * self.directions_amount
         # H x N
         if self.is_complex:
             self.A_angle = nn.ParameterDict({
@@ -112,8 +113,8 @@ class TwoDimensionalSSM(nn.Module):
             self.B_1 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim, 2))
             self.B_2 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim, 2))
             # D x N
-            self.C_1 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim, 2))
-            self.C_2 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim, 2))
+            self.C_1 = nn.Parameter(torch.Tensor(self.C_dimensions, self.ndim, 2))
+            self.C_2 = nn.Parameter(torch.Tensor(self.C_dimensions, self.ndim, 2))
             self.parameters_without_weight_decay = [self.A_angle, self.A_radius, self.B_1, self.B_2, self.C_1, self.C_2]
         else:
             self.A = {
@@ -126,8 +127,8 @@ class TwoDimensionalSSM(nn.Module):
             self.B_1 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim))
             self.B_2 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim))
             # D x N
-            self.C_1 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim))
-            self.C_2 = nn.Parameter(torch.Tensor(self.kernel_dim, self.ndim))
+            self.C_1 = nn.Parameter(torch.Tensor(self.C_dimensions, self.ndim))
+            self.C_2 = nn.Parameter(torch.Tensor(self.C_dimensions, self.ndim))
             self.parameters_without_weight_decay = [self.A, self.B_1, self.B_2, self.C_1, self.C_2]
 
         for param in self.parameters_without_weight_decay:
@@ -227,9 +228,16 @@ class TwoDimensionalSSM(nn.Module):
             C_1 = self.C_1
             C_2 = self.C_2
         C = torch.stack([C_1, C_2], dim=0) * self.scale
-        output = einsum(outputs, C, 'direction patches n_ssm N, directions  n_ssm N -> patches n_ssm')
+        C = rearrange(C,
+                      'direction (H n_ssm_multiplied_by_kernel_directions) N ->'
+                      'direction H n_ssm_multiplied_by_kernel_directions N',
+                      n_ssm_multiplied_by_kernel_directions=self.n_ssm * self.directions_amount)
+        # output = einsum(outputs, C, 'direction patches n_ssm N, directions  n_ssm N -> patches n_ssm')
+        output = einsum(outputs, C, 'direction patches n_ssm_directions N, directions H  n_ssm_directions N '
+                                    '-> patches H n_ssm_directions')
+        output = rearrange(output, 'patches H n_ssm_directions -> patches (H n_ssm_directions)')
 
-        output = output.view(self.one_side_length, self.one_side_length, self.kernel_dim)
+        output = output.view(self.one_side_length, self.one_side_length, self.C_dimensions)
         output[0, :, :, ] *= 2
         output[:, 0, :, ] *= 2
         output[0, 0] /= 4
@@ -288,10 +296,9 @@ class TwoDimensionalSSM(nn.Module):
         out = None
         # Split kernels to four directions
         kernels = list(
-            torch.split(k, [self.n_ssm for i in range(self.directions_amount)],
+            torch.split(k, [self.embed_dim for i in range(self.directions_amount)],
                         dim=0))  # 4 kernels, one for each direction.
         # Transform Kernels from L x L x n_ssm -> L x L x H
-        kernels = [repeat(k, ' n l1 l2 ->  (h n) l1 l2', h=self.repeat) for k in kernels]
         if self.directions_amount == 4:
             flip_dims = [[], [-2], [-1], [-2, -1]]
         else:
@@ -312,10 +319,9 @@ class TwoDimensionalSSM(nn.Module):
             else:
                 out += curr_after_flip
         out = out.type_as(x)
-        if len(residual.shape) == 3 and self.use_residual:
-            # B x D x L -> L x B x D
-            out = out.permute(2, 0, 1) + residual
-        elif len(residual.shape) == 4 and self.use_residual:
+        if len(residual.shape) == 3:
+            out = rearrange(out, 'b d l1 l2 -> (l1 l2) b d ')
+        if self.use_residual:
             out += residual
 
         return self.normalization(out)  # notice normalization might be the identity function.

@@ -66,6 +66,7 @@ def create_model(img_size, n_classes, args):
 
     elif args.model == 'convnext-32px':
         # Expecting input size to be same as CIFAR-10, CIFAR-100
+        args.img_size = img_size
         if args.ema:
             assert args.ssm_kernel_size, "Currently the parameter ssm_kernel_size should be set to something when using " \
                                          "ConvNext, as we use truncated kernels with specific size (and not global as " \
