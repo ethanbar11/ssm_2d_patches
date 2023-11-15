@@ -266,24 +266,19 @@ class TwoDimensionalSSM(nn.Module):
                 keys that are pads, of shape `(batch, src_len)`, where
                 padding elements are indicated by 1s.
         """
-
         assert self.directions_amount > 1
-
         if len(x.shape) == 3:
             # Expecting L x B x D
             seq_len, bsz, embed_dim = x.size()
             residual = einsum(x, self.omega, 'L B D, D -> L B D')
-
             # L x B x D -> B x D x L
             x = x.permute(1, 2, 0)
             fft_len = int(math.sqrt(seq_len))
             x = x.view(bsz, embed_dim, fft_len, fft_len)
-
         elif len(x.shape) == 4:
             # Expecting B x D x L
             bsz, embed_dim, seq_len, seq_len2 = x.size()
             residual = einsum(x, self.omega, 'B D L1 L2, D -> B D L1 L2')
-
             assert seq_len == seq_len2, "2-D SSM Currently implemented only for square images."
             assert embed_dim == self.embed_dim
             fft_len = seq_len
@@ -294,30 +289,30 @@ class TwoDimensionalSSM(nn.Module):
         # D x L
         k = self.kernel().permute(2, 0, 1)  # (Directions * N_SSM) x kernel_size x kernel_size
         if k.shape[-1] < fft_len:
+            print("! Padding")
             padding_amount = fft_len - k.shape[-1]
             k = torch.nn.functional.pad(k, (0, padding_amount, 0, padding_amount))
         s = 0
-
         out = None
         # Split kernels to four directions
-        kernels = list(
-            torch.split(k, [self.embed_dim for i in range(self.directions_amount)],
-                        dim=0))  # 4 kernels, one for each direction.
+        k_f_s = torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len))
+
+        # kernels = list(
+        #     torch.split(k, [self.embed_dim for i in range(self.directions_amount)],
+        #                 dim=0))  # 4 kernels, one for each direction.
         # Transform Kernels from L x L x n_ssm -> L x L x H
+        # kernels = [torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len)) for k in kernels]
         if self.directions_amount == 4:
             flip_dims = [[], [-2], [-1], [-2, -1]]
         else:
             flip_dims = [[], [-2, -1]]
-        for idx, flip in enumerate(flip_dims):
-            k = kernels[idx]
-            # pad k to be the size of x
-            # k = torch.nn.functional.pad(k, (0, x.shape[-1] - k.shape[-1], 0, x.shape[-2] - k.shape[-2]))
-            curr_x = torch.flip(x, dims=flip)
+        all_x_lst = torch.cat([torch.flip(x, dims=flip) for flip in flip_dims], dim=1)
 
-            k_f = torch.fft.rfft2(k.float(), s=(2 * fft_len, 2 * fft_len))
-            x_f = torch.fft.rfft2(curr_x.float(), s=(2 * fft_len, 2 * fft_len))
-            curr = torch.fft.irfft2(x_f * k_f, s=(2 * fft_len, 2 * fft_len))[..., s:fft_len + s,
+        x_f_s = torch.fft.rfft2(all_x_lst, s=(2 * fft_len, 2 * fft_len))
+        curr_all = torch.fft.irfft2(x_f_s * k_f_s, s=(2 * fft_len, 2 * fft_len))[..., s:fft_len + s,
                    s:fft_len + s]
+        for idx, flip in enumerate(flip_dims):
+            curr = curr_all[:, idx * embed_dim:(idx + 1) * embed_dim, :, :]
             curr_after_flip = torch.flip(curr, dims=flip)
             if out is None:
                 out = curr_after_flip
@@ -328,5 +323,5 @@ class TwoDimensionalSSM(nn.Module):
             out = rearrange(out, 'b d l1 l2 -> (l1 l2) b d ')
         if self.use_residual:
             out += residual
-
         return self.normalization(out)  # notice normalization might be the identity function.
+

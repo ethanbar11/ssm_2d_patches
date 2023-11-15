@@ -33,7 +33,6 @@ python main.py --model swin --dataset T-IMNET --embed_dim 96
 
 ```bash
 python main.py --model vit --dataset CIFAR100 --no_pos_embedding --use_mix_ffn --ema ssm_2d --normalize --n_ssm=2 --ndim 16 --directions_amount 2 --seed 0
-
 ```
 
 To run default Swin run the following command with choice = none
@@ -64,15 +63,12 @@ and to recreate our results using ssm:
 python main.py --model mega --dataset CIFAR100 --ema ssm_2d --n_ssm 8 --ndim 16
 ```
 
-### Swin
-
-
 ### ConvNext
 
 Default ConvNext
 
 ```bash
-python main.py --model convnext --dataset CIFAR100
+python main.py --model convnext --dataset IMNET
 ```
 
 ConvNext for small datasets
@@ -81,16 +77,12 @@ To create original results from: https://juliusruseckas.github.io/ml/convnext-ci
 Notice original results are with batch-size = 128
 
 ```bash
-python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1
-CUDA_VISIBLE_DEVICES=0 python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1 --seed 1 --project convnext_cifar10
+python main.py --model convnext-small --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1
+python main.py --model convnext-small --dataset T-IMNET --lr 1e-3 --batch_size 128 --weight-decay 1e-1
 ```
 
 And with SSM:
 
 ```bash
-python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1  --ema ssm_2d --ssm_kernel_size 7 --n_ssm 2 --directions_amount 2 --ndim 16 --complex_ssm --seed 0 
-CUDA_VISIBLE_DEVICES=0 python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1  --ema ssm_2d --ssm_kernel_size 7 --n_ssm 2 --directions_amount 2 --ndim 16 --complex_ssm --seed 0 --project convnext_cifar10 
+python main.py --model convnext-small --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1  --ema ssm_2d --ssm_kernel_size 7 --n_ssm 2 --directions_amount 2 --ndim 16 --complex_ssm --seed 0 
 ```
-
-
-Wandb project: convnext_cifar10
