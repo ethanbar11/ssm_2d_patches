@@ -15,6 +15,13 @@ def create_model(img_size, n_classes, args):
         model = ViT(img_size=img_size, patch_size=patch_size, num_classes=n_classes, dim=args.embed_dim,
                     mlp_dim_ratio=2, depth=9, heads=12, dim_head=args.embed_dim // 12,
                     stochastic_depth=args.sd, is_SPT=args.is_SPT, is_LSA=args.is_LSA, args=args)
+        if not args.ema:
+            name = f'baseline seed = {args.seed}'
+        else:
+            string_indicating_real_or_complex = 'Complex' if args.complex_ssm else 'Real'
+            string_indicating_mix_ffn_usage = 'mix_ffn style' if args.use_mix_ffn else ''
+            name = f'{string_indicating_real_or_complex} n_ssm = {args.n_ssm} n_dim = {args.ndim} directions = {args.directions_amount} seed = {args.seed} {string_indicating_mix_ffn_usage}'
+
 
     elif args.model == "convit":
         patch_size = 4 if img_size == 32 else 8
