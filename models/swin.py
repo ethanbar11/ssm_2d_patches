@@ -335,8 +335,7 @@ class SwinTransformerBlock(nn.Module):
         self.register_buffer("attn_mask", attn_mask)  # No parameter
 
         if args.ema == 'ssm_2d' and not args.use_mix_ffn:
-            self.move = TwoDimensionalSSM(embed_dim=dim, ndim=args.ndim, truncation=None,
-                                          L=self.input_resolution[0] ** 2, args=args, save_path=save_path)
+            self.move = TwoDimensionalSSM(embed_dim=dim, L=self.input_resolution[0] ** 2, args=args)
 
         elif args.ema == 's4nd':
             config_path = args.s4nd_config

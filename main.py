@@ -34,7 +34,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 warnings.filterwarnings("ignore", category=Warning)
 
 best_acc1 = 0
-MODELS = ['vit', 'swin', 'pit', 'cait', 't2t', 'mega', 'convit', 'convnext', 'convnext-32px']
+MODELS = ['vit', 'swin', 'pit', 'cait', 't2t', 'mega', 'convit', 'convnext', 'convnext-small']
 
 
 def create_optimization_groups(model, args):
@@ -326,7 +326,6 @@ def main(args):
         scheduler.load_state_dict(checkpoint['scheduler'])
         final_epoch = args.epochs
         args.epochs = final_epoch - (checkpoint['epoch'] + 1)
-
     for epoch in tqdm(range(args.epochs)):
         lr = train(train_loader, model, criterion, optimizer, epoch, scheduler, args)
         acc1 = validate(val_loader, model, criterion, lr, args, epoch=epoch)

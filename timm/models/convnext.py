@@ -144,7 +144,7 @@ class ConvNeXtBlock(nn.Module):
             )
         elif args.ema == 'ssm_2d':
             assert out_chs == in_chs
-            L = min(patches_amount ** 2, args.ssm_kernel_size **2)
+            L = min(patches_amount ** 2, args.ssm_kernel_size ** 2)
             self.conv_dw = TwoDimensionalSSM(embed_dim=in_chs, L=L, args=args)
         self.norm = norm_layer(out_chs)
         self.mlp = mlp_layer(out_chs, int(mlp_ratio * out_chs), act_layer=act_layer)
@@ -344,7 +344,7 @@ class ConvNeXt(nn.Module):
         prev_chs = dims[0]
         curr_stride = stem_stride
         dilation = 1
-        patches_amount = args.img_size
+        patches_amount = args.img_size // patch_size
         # 4 feature resolution stages, each consisting of multiple residual blocks
         for i in range(4):
             stride = 2 if curr_stride == 2 or i > 0 else 1

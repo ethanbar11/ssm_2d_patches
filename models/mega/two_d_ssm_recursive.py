@@ -37,6 +37,7 @@ def plot_heatmap(x, title, save_image=False, save_path=None):
         # plt.show()
         figure.clf()
     else:
+        plt.imshow(img)
         plt.show()
 
 
@@ -217,7 +218,7 @@ class TwoDimensionalSSM(nn.Module):
     def _compute_kernel(self):
         self._kernel = None
         # l x l x D x N
-        outputs = self.compute_x_matrix(self.one_side_length)
+        x_matrix = self.compute_x_matrix(self.one_side_length)
         # L x L x D x N
 
         # L x L x H
@@ -227,14 +228,18 @@ class TwoDimensionalSSM(nn.Module):
         else:
             C_1 = self.C_1
             C_2 = self.C_2
-        C = torch.stack([C_1, C_2], dim=0) * self.scale
+        C = torch.stack([C_1, C_2], dim=0) * self.scale  # direction X (embed_dim * corners) X N
         C = rearrange(C,
-                      'direction (H n_ssm_multiplied_by_kernel_directions) N ->'
-                      'direction H n_ssm_multiplied_by_kernel_directions N',
-                      n_ssm_multiplied_by_kernel_directions=self.n_ssm * self.directions_amount)
+                      'axis (H n_ssm_multiplied_by_kernel_corners) N ->'  # Embed dim 96 N_ssm =2 directions =4 (96 *4)
+                      'axis H n_ssm_multiplied_by_kernel_corners N',
+                      n_ssm_multiplied_by_kernel_corners=self.n_ssm * self.directions_amount)
+        # C shape: axis X (embed_dim // (n_ssm * directions)) X (n_ssm * directions) X N
         # output = einsum(outputs, C, 'direction patches n_ssm N, directions  n_ssm N -> patches n_ssm')
-        output = einsum(outputs, C, 'direction patches n_ssm_directions N, directions H  n_ssm_directions N '
+        output = einsum(x_matrix, C, 'axis patches n_ssm_directions N, axis H  n_ssm_directions N '
                                     '-> patches H n_ssm_directions')
+        output2 = einsum(x_matrix, C, 'axis patches n_ssm_directions N, axis H  n_ssm_directions N '
+                                     '-> axis patches H n_ssm_directions')
+        output3 = output2[0] + output2[1]
         output = rearrange(output, 'patches H n_ssm_directions -> patches (H n_ssm_directions)')
 
         output = output.view(self.one_side_length, self.one_side_length, self.C_dimensions)

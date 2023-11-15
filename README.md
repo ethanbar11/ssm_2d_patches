@@ -66,12 +66,16 @@ To create original results from: https://juliusruseckas.github.io/ml/convnext-ci
 Notice original results are with batch-size = 128
 
 ```bash
-python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1  
+python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1
+CUDA_VISIBLE_DEVICES=0 python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1 --seed 1 --project convnext_cifar10
 ```
 
 And with SSM:
 
 ```bash
-python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1  --ema ssm_2d --ssm_kernel_size 7 --n_ssm 8
+python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1  --ema ssm_2d --ssm_kernel_size 7 --n_ssm 2 --directions_amount 2 --ndim 16 --complex_ssm --seed 0 
+CUDA_VISIBLE_DEVICES=0 python main.py --model convnext-32px --dataset CIFAR10 --lr 1e-3 --batch_size 128 --weight-decay 1e-1  --ema ssm_2d --ssm_kernel_size 7 --n_ssm 2 --directions_amount 2 --ndim 16 --complex_ssm --seed 0 --project convnext_cifar10 
 ```
+
+
 Wandb project: convnext_cifar10
