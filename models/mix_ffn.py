@@ -34,7 +34,7 @@ class MixFFN(nn.Module):
         hidden_features = hidden_features or in_features
         self.fc1 = nn.Linear(in_features, hidden_features)
         if args.ema == 'ssm_2d':
-            self.move = TwoDimensionalSSM(hidden_features, ndim=args.ndim, truncation=None, L=num_patches, args=args)
+            self.move = TwoDimensionalSSM(hidden_features,  L=num_patches, args=args)
             self.ssm = True
         else:
             self.move = DWConv(hidden_features)
