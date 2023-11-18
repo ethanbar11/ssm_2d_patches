@@ -35,6 +35,9 @@ def profile(model, X, Y):
     if len(forward_times) > 0:
         print('Forward time: ', sum(forward_times) / len(forward_times))
         print('Backward time: ', sum(backward_times) / len(backward_times))
+        tot_time = sum(forward_times) + sum(backward_times)
+        avg_tot_time = tot_time/len(backward_times)
+        print(f'Total time: { avg_tot_time}')
     return torch.stack(pred_Y, dim=0)
 
 
@@ -62,7 +65,7 @@ def create_model(cls_type, layers_amount):
 
 if __name__ == '__main__':
     torch.seed()
-    layers = 4
+    layers = 8
     embed_dim = 128
     L = 8 ** 2
     batch_size = 64
@@ -72,14 +75,13 @@ if __name__ == '__main__':
     # Initially the model is created with use_old_compute_x_matrix = True, meaning without the change.
     model = create_model(TwoDimensionalSSMOptimized, layers, )
 
-    print('Old:')
+    print('New:')
     out1 = profile(model, X, Y)
 
-    print('New:')
+    print('Old:')
     for layer in model:
         if hasattr(layer, 'use_old_compute_x'):
-            layer.use_old_compute_x = False
-    model.use_old_compute_x = False
+            layer.use_old_compute_x = True
     out2 = profile(model, X, Y)
 
     max_difference = torch.max(torch.abs(out1 - out2))

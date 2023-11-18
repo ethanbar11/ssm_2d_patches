@@ -67,7 +67,7 @@ class TwoDimensionalSSMOptimized(nn.Module):
             args=None,
     ):
         super().__init__()
-        self.use_old_compute_x = args.use_old_compute_x
+        self.use_old_compute_x = True
         self.is_2_dim = True
         self.embed_dim = embed_dim
         self.ndim = args.ndim
@@ -90,7 +90,6 @@ class TwoDimensionalSSMOptimized(nn.Module):
         self.powers = self.coeff_calc.whole_as_one[:, :-1]
         self.one_matrix_only_B_with_coeffs = self.coeff_calc.whole_as_one[:, -1, :, :2]
         self.powers = rearrange(torch.argmax(self.powers, dim=-1).unsqueeze(-1).unsqueeze(-1), 'a b c d e -> a c b d e')
-
 
         if self.is_complex:
             self.one_matrix = self.one_matrix.unsqueeze(-1)
@@ -164,6 +163,9 @@ class TwoDimensionalSSMOptimized(nn.Module):
         self.tpu = False
         self.whole_output_last_time = None
 
+        # TODO: DELETE, only for speed improvement
+        self.kernel_raw = nn.Parameter(torch.rand((2, 1024, 5, 4, 16)))
+
     def prepare_for_onnx_export_(self):
         self.onnx_trace = True
 
@@ -226,8 +228,8 @@ class TwoDimensionalSSMOptimized(nn.Module):
         A_powers = torch.pow(A_values, self.powers)
         B = torch.stack([B1, B2])
         B_with_coeffs = einsum(self.one_matrix_only_B_with_coeffs, B, 'd R B_1_B_2, B_1_B_2 n_ssm N-> d R n_ssm N')
-        whole_output = einsum(A_powers[:, :, 0], A_powers[:, :, 1], A_powers[:, :, 2], A_powers[:, :, 3], B_with_coeffs,
-                              'd R n_ssm N, d R n_ssm N, d R n_ssm N, d R n_ssm N,d R n_ssm N-> d R n_ssm N')
+        whole_output_before_prod = torch.cat((A_powers, B_with_coeffs.unsqueeze(2)), dim=2)
+        whole_output = torch.prod(whole_output_before_prod, dim=2)
         whole_output = rearrange(whole_output, 'd (r1 r2) n_ssm N-> d r1 r2 n_ssm N', r1=self.one_side_length ** 2)
         whole_output = einsum(whole_output, 'd r1 r2 n_ssm N-> d r1 n_ssm N')
         return whole_output

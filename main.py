@@ -72,7 +72,7 @@ def init_parser():
 
     parser.add_argument('--s4nd_config', default=None, type=str,
                         help='S4nd config file path')
-    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+    parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
 
     parser.add_argument('--print-freq', default=1, type=int, metavar='N', help='log frequency (by iteration)')

@@ -67,6 +67,7 @@ class TwoDimensionalSSM(nn.Module):
             args=None,
     ):
         super().__init__()
+        self.use_old_compute_x = False
         self.is_2_dim = True
         self.embed_dim = embed_dim
         self.ndim = args.ndim
@@ -86,6 +87,10 @@ class TwoDimensionalSSM(nn.Module):
         self.coeff_calc.calc_coeffs_lazy(force=force_coeff_calc)
         self.matrices = self.coeff_calc.matrices
         self.one_matrix = self.coeff_calc.whole_as_one
+        self.powers = self.coeff_calc.whole_as_one[:, :-1]
+        self.one_matrix_only_B_with_coeffs = self.coeff_calc.whole_as_one[:, -1, :, :2]
+        self.powers = rearrange(torch.argmax(self.powers, dim=-1).unsqueeze(-1).unsqueeze(-1), 'a b c d e -> a c b d e')
+
         if self.is_complex:
             self.one_matrix = self.one_matrix.unsqueeze(-1)
 
@@ -156,6 +161,10 @@ class TwoDimensionalSSM(nn.Module):
 
         self.onnx_trace = False
         self.tpu = False
+        self.whole_output_last_time = None
+
+        # TODO: DELETE, only for speed improvement
+        self.kernel_raw = nn.Parameter(torch.rand((2, 1024, 5, 4, 16)))
 
     def prepare_for_onnx_export_(self):
         self.onnx_trace = True
@@ -182,6 +191,12 @@ class TwoDimensionalSSM(nn.Module):
 
             nn.init.normal_(self.omega, mean=0.0, std=1.0)
 
+    def compute_sympy_kernel(self):
+        A, B1, B2 = self._calc_coeffs()
+        outcome = self.coeff_calc.compute_sympy_kernel(A, B1, B2, self.C_1, self.C_2)
+        outcome = torch.tensor(outcome.astype(float).values).to('cuda')
+        return outcome
+
     def _calc_coeffs(self):
         self._coeffs = None
         # D x N x 1
@@ -205,6 +220,23 @@ class TwoDimensionalSSM(nn.Module):
     def compute_x_matrix(self, kernel_dim):
         # H x N each
         A, B1, B2 = self._calc_coeffs()
+
+        # l x l  D x N
+        A_values = torch.stack(list(A.values()), dim=0)
+
+        # copy A_values power dim times
+        A_powers = torch.pow(A_values, self.powers)
+        B = torch.stack([B1, B2])
+        B_with_coeffs = einsum(self.one_matrix_only_B_with_coeffs, B, 'd R B_1_B_2, B_1_B_2 n_ssm N-> d R n_ssm N')
+        whole_output_before_prod = torch.cat((A_powers, B_with_coeffs.unsqueeze(2)), dim=2)
+        whole_output = torch.prod(whole_output_before_prod, dim=2)
+        whole_output = rearrange(whole_output, 'd (r1 r2) n_ssm N-> d r1 r2 n_ssm N', r1=self.one_side_length ** 2)
+        whole_output = einsum(whole_output, 'd r1 r2 n_ssm N-> d r1 n_ssm N')
+        return whole_output
+
+    def compute_x_matrix_old(self, kernel_dim):
+        # H x N each
+        A, B1, B2 = self._calc_coeffs()
         power_dim = kernel_dim * 2
         # l x l  D x N
         A_values = torch.stack(list(A.values()), dim=0)
@@ -219,6 +251,8 @@ class TwoDimensionalSSM(nn.Module):
         whole_output = einsum(whole_output[:, 0], whole_output[:, 1], whole_output[:, 2], whole_output[:, 3],
                               whole_output[:, 4],
                               'd R n_ssm N, d R n_ssm N, d R n_ssm N, d R n_ssm N, d R n_ssm N-> d R n_ssm N')
+        self.whole_output_last_time = whole_output
+
         whole_output = rearrange(whole_output, 'd (r1 r2) n_ssm N-> d r1 r2 n_ssm N', r1=self.one_side_length ** 2)
         whole_output = einsum(whole_output, 'd r1 r2 n_ssm N-> d r1 n_ssm N')
         return whole_output
@@ -226,7 +260,10 @@ class TwoDimensionalSSM(nn.Module):
     def _compute_kernel(self):
         self._kernel = None
         # l x l x D x N
-        x_matrix = self.compute_x_matrix(self.one_side_length)
+        if self.use_old_compute_x:
+            x_matrix = self.compute_x_matrix_old(self.one_side_length)
+        else:
+            x_matrix = self.compute_x_matrix(self.one_side_length)
         # L x L x D x N
 
         # L x L x H
@@ -244,7 +281,7 @@ class TwoDimensionalSSM(nn.Module):
         # C shape: axis X (embed_dim // (n_ssm * directions)) X (n_ssm * directions) X N
         # output = einsum(outputs, C, 'direction patches n_ssm N, directions  n_ssm N -> patches n_ssm')
         output = einsum(x_matrix, C, 'axis patches n_ssm_directions N, axis H  n_ssm_directions N '
-                                    '-> patches H n_ssm_directions')
+                                     '-> patches H n_ssm_directions')
         # output2 = einsum(x_matrix, C, 'axis patches n_ssm_directions N, axis H  n_ssm_directions N '
         #                              '-> axis patches H n_ssm_directions')
         # output3 = output2[0] + output2[1]
@@ -332,4 +369,3 @@ class TwoDimensionalSSM(nn.Module):
         if self.use_residual:
             out += residual
         return self.normalization(out)  # notice normalization might be the identity function.
-
