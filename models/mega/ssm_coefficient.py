@@ -73,7 +73,6 @@ class CoeffCalculator:
             torch.save(self.matrices, checked_cache_location)
         self.initialize_whole_as_one()
 
-
     def initialize_whole_as_one(self):
         B = {}
         for direction in self.matrices:
@@ -202,6 +201,7 @@ class CoeffCalculator:
         return lst
 
     def compute_sympy_kernel(self, A_vals, B_1, B_2, C_1, C_2):
+        assert B_1.shape[0] == 1 and B_1.shape[1] == 1
         df = pd.DataFrame(self.compute_symbolic_kernel())
         values = {self.A_1: A_vals['A_1'],
                   self.A_2: A_vals['A_2'],
@@ -209,6 +209,8 @@ class CoeffCalculator:
                   self.A_4: A_vals['A_4'], }
         values.update({self.C_1: C_1, self.C_2: C_2,
                        self.B_1: B_1, self.B_2: B_2})
+        for key, val in values.items():
+            values[key] = val[0, 0].item()
         kernel_outcome = df.applymap(lambda x: x.subs(values))
         return kernel_outcome
 
